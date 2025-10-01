@@ -270,11 +270,22 @@
             }
 
             async removeTask(clientId) {
-                const card = document.getElementById(`task-${clientId}`);
-                if (card) {
-                    card.remove();
-                    this.tasks.delete(clientId);
-                    this.showNotification('Task removed', 'info');
+                try {
+                    const response = await fetch(`/remove_task/${clientId}`, { method: 'POST' });
+                    
+                    if (response.ok) {
+                        const card = document.getElementById(`task-${clientId}`);
+                        if (card) {
+                            card.remove();
+                        }
+                        this.tasks.delete(clientId);
+                        this.showNotification('Task removed', 'info');
+                    } else {
+                        this.showNotification('Failed to remove task', 'error');
+                    }
+                } catch (error) {
+                    console.error('Error removing task:', error);
+                    this.showNotification('Network error: Failed to remove task', 'error');
                 }
             }
 

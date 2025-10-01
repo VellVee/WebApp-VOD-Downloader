@@ -46,6 +46,7 @@ class Config:
     ]
 
 task_status: Dict[str, Dict[str, Any]] = {}
+active_processes: Dict[str, 'YTDLPDownloader'] = {}  # Track active downloader instances
 
 class TaskManager:
     @staticmethod
@@ -80,6 +81,7 @@ class TaskManager:
     @staticmethod
     def cleanup_old_tasks() -> None:
         """Remove tasks older than 24 hours"""
+        global active_processes
         current_time = time.time()
         to_remove = []
         
@@ -89,6 +91,14 @@ class TaskManager:
                 to_remove.append(client_id)
         
         for client_id in to_remove:
+            # Cancel active process if still running
+            if client_id in active_processes:
+                try:
+                    active_processes[client_id].cancel_download()
+                    del active_processes[client_id]
+                except Exception as e:
+                    logger.error(f"Error cancelling old task {client_id}: {e}")
+            
             del task_status[client_id]
             logger.info(f"Removed old task: {client_id}")
         
@@ -196,7 +206,13 @@ class YTDLPDownloader:
 
     def run_download(self) -> None:
         """Execute the download process"""
-        try:            # Initialize task
+        global active_processes
+        
+        try:
+            # Register this downloader as active
+            active_processes[self.client_id] = self
+            
+            # Initialize task
             task_status[self.client_id] = {
                 'status': 'started',
                 'output': [f"Started processing URL: {self.url}"],
@@ -206,7 +222,9 @@ class YTDLPDownloader:
                 'url': self.url,
                 'date': self.date
             }
-            TaskManager.save_tasks()# Build and execute command
+            TaskManager.save_tasks()
+            
+            # Build and execute command
             cmd = self.build_command()
             logger.info(f"Executing command for {self.client_id}: {' '.join(cmd)}")
             
@@ -256,7 +274,11 @@ class YTDLPDownloader:
             folder_name = None
             for line in iter(self.process.stdout.readline, ''):
                 if line.strip():
-                    process_started = True
+                    if not process_started:
+                        # First line received, update status to processing
+                        task_status[self.client_id]['status'] = 'processing'
+                        process_started = True
+                    
                     line_clean = line.strip()
                     task_status[self.client_id]['output'].append(line_clean)
                     TaskManager.save_tasks()
@@ -342,6 +364,10 @@ class YTDLPDownloader:
             task_status[self.client_id]['status'] = f'error: {str(e)}'
             task_status[self.client_id]['output'].append(f"Error: {str(e)}")
             TaskManager.save_tasks()
+        finally:
+            # Remove from active processes when done
+            if self.client_id in active_processes:
+                del active_processes[self.client_id]
 
     def cancel_download(self) -> bool:
         """Cancel the running download"""
@@ -436,12 +462,48 @@ def cancel_download(client_id):
     if client_id not in task_status:
         return jsonify({'error': 'Task not found'}), 404
     
-    # TODO: Implement proper cancellation mechanism
-    task_status[client_id]['status'] = 'cancelled'
-    task_status[client_id]['output'].append('Download cancelled by user')
-    TaskManager.save_tasks()
+    # Try to terminate the actual process if it exists
+    if client_id in active_processes:
+        downloader = active_processes[client_id]
+        if downloader.cancel_download():
+            task_status[client_id]['status'] = 'cancelled'
+            task_status[client_id]['output'].append('Download cancelled by user - process terminated')
+            logger.info(f"Successfully cancelled download {client_id}")
+        else:
+            task_status[client_id]['status'] = 'cancelled'
+            task_status[client_id]['output'].append('Download marked as cancelled (process may have already finished)')
+            logger.warning(f"Could not terminate process for {client_id}, marked as cancelled")
+    else:
+        # Process not active, just mark as cancelled
+        task_status[client_id]['status'] = 'cancelled'
+        task_status[client_id]['output'].append('Download cancelled by user')
+        logger.info(f"Marked task {client_id} as cancelled (process not active)")
     
+    TaskManager.save_tasks()
     return jsonify({'message': 'Download cancelled'})
+
+@app.route('/remove_task/<client_id>', methods=['DELETE', 'POST'])
+def remove_task(client_id):
+    """Remove a task from the task list and persistent storage"""
+    global active_processes
+    
+    if client_id in task_status:
+        # If the process is still active, cancel it first
+        if client_id in active_processes:
+            try:
+                active_processes[client_id].cancel_download()
+                del active_processes[client_id]
+                logger.info(f"Cancelled active process for task {client_id}")
+            except Exception as e:
+                logger.error(f"Error cancelling process for task {client_id}: {e}")
+        
+        # Remove the task from storage
+        del task_status[client_id]
+        TaskManager.save_tasks()
+        logger.info(f"Task {client_id} removed")
+        return jsonify({'message': 'Task removed successfully'})
+    else:
+        return jsonify({'error': 'Task not found'}), 404
 
 @app.route('/get_tasks', methods=['GET'])
 def get_tasks():
@@ -451,8 +513,20 @@ def get_tasks():
 
 @app.route('/clear_tasks', methods=['POST'])
 def clear_tasks():
-    global task_status
+    global task_status, active_processes
+    
+    # Cancel all active processes before clearing
+    for client_id in list(active_processes.keys()):
+        try:
+            active_processes[client_id].cancel_download()
+            logger.info(f"Cancelled active download: {client_id}")
+        except Exception as e:
+            logger.error(f"Error cancelling download {client_id}: {e}")
+    
+    # Clear the dictionaries
+    active_processes = {}
     task_status = {}
+    
     try:
         with open(Config.TASK_FILE, 'w', encoding='utf-8') as f:
             json.dump({}, f)
