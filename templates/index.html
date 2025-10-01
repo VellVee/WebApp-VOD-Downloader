@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YT-DLP Web Downloader</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script>
+        class DownloadManager {
+            constructor() {
+                this.tasks = new Map();
+                this.init();
+            }
+
+            init() {
+                this.setupEventListeners();
+                this.setDefaultDate();
+                this.loadExistingTasks();
+                this.startPeriodicUpdates();
+            }
+
+            setupEventListeners() {
+                document.getElementById('download-form').addEventListener('submit', (e) => this.handleDownload(e, 'regular'));
+                document.getElementById('vod-download-btn').addEventListener('click', (e) => this.handleDownload(e, 'vod'));
+                document.getElementById('clear-btn').addEventListener('click', () => this.clearAllTasks());
+                
+                // Add input validation
+                const urlInput = document.getElementById('video-url');
+                urlInput.addEventListener('input', this.validateUrl.bind(this));
+            }
+
+            setDefaultDate() {
+                const dateInput = document.getElementById('download-date');
+                const currentDate = new Date().toISOString().slice(0, 10);
+                dateInput.value = currentDate;
+                dateInput.placeholder = currentDate;
+            }
+
+            async loadExistingTasks() {
+                try {
+                    const response = await fetch('/get_tasks');
+                    const tasks = await response.json();
+                    
+                    // Sort tasks by creation date (newest first)
+                    const sortedTasks = Object.entries(tasks).sort((a, b) => {
+                        const timeA = a[1].created_at || 0;
+                        const timeB = b[1].created_at || 0;
+                        return timeB - timeA; // Newest first
+                    });
+                    
+                    for (const [clientId, task] of sortedTasks) {
+                        this.createTaskCard(clientId, task);
+                        this.tasks.set(clientId, task);
+                    }
+                } catch (error) {
+                    this.showNotification('Failed to load existing tasks', 'error');
+                }
+            }
+
+            startPeriodicUpdates() {
+                setInterval(() => {
+                    this.updateAllActiveTasks();
+                }, 2000); // Update every 2 seconds
+            }
+
+            async updateAllActiveTasks() {
+                for (const [clientId, task] of this.tasks.entries()) {
+                    if (task.status === 'started' || task.status === 'processing') {
+                        await this.updateTaskStatus(clientId);
+                    }
+                }
+            }            validateUrl(event) {
+                const url = event.target.value.trim();
+                const submitBtn = document.getElementById('submit-btn');
+                const vodBtn = document.getElementById('vod-download-btn');
+                
+                // If empty URL, enable buttons (no validation needed for empty)
+                if (url.length === 0) {
+                    event.target.classList.remove('invalid');
+                    submitBtn.disabled = false;
+                    vodBtn.disabled = false;
+                    return;
+                }
+                
+                // Very permissive validation - just check if it looks like a URL
+                const isValidUrl = url.includes('.') && (url.startsWith('http') || !url.includes(' '));
+                
+                if (!isValidUrl) {
+                    event.target.classList.add('invalid');
+                    submitBtn.disabled = true;
+                    vodBtn.disabled = true;
+                } else {
+                    event.target.classList.remove('invalid');
+                    submitBtn.disabled = false;
+                    vodBtn.disabled = false;
+                }
+            }
+
+            async handleDownload(event, type) {
+                event.preventDefault();
+                
+                const url = document.getElementById('video-url').value.trim();
+                const date = document.getElementById('download-date').value.trim();
+                
+                if (!url) {
+                    this.showNotification('Please enter a URL', 'error');
+                    return;
+                }
+
+                const clientId = this.generateClientId();
+                const endpoint = type === 'vod' ? '/start_vod_download' : '/start_download';
+                const payload = { url, client_id: clientId };
+                
+                if (type === 'vod') {
+                    payload.date = date;
+                }
+
+                try {
+                    this.showLoading(true);
+                    const response = await fetch(endpoint, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+
+                    const result = await response.json();
+                    
+                    if (response.ok) {
+                        this.createTaskCard(clientId, {
+                            status: 'started',
+                            output: [result.message],
+                            title: 'Starting download...',
+                            type: type,
+                            url: url,
+                            date: date
+                        });
+                        
+                        this.tasks.set(clientId, result);
+                        document.getElementById('video-url').value = '';
+                        this.showNotification('Download started successfully', 'success');
+                        this.startTaskTracking(clientId);
+                    } else {
+                        this.showNotification(result.error || 'Failed to start download', 'error');
+                    }
+                } catch (error) {
+                    this.showNotification('Network error: Failed to start download', 'error');
+                } finally {
+                    this.showLoading(false);
+                }
+            }
+
+            async startTaskTracking(clientId) {
+                const updateTask = async () => {
+                    const task = await this.updateTaskStatus(clientId);
+                    if (task && (task.status === 'started' || task.status === 'processing')) {
+                        setTimeout(updateTask, 1000);
+                    }
+                };
+                updateTask();
+            }
+
+            async updateTaskStatus(clientId) {
+                try {
+                    const response = await fetch(`/status/${clientId}`);
+                    if (response.ok) {
+                        const task = await response.json();
+                        this.updateTaskCard(clientId, task);
+                        this.tasks.set(clientId, task);
+                        return task;
+                    } else {
+                        console.warn(`Task ${clientId} not found`);
+                        return null;
+                    }
+                } catch (error) {
+                    console.error(`Failed to update task ${clientId}:`, error);
+                    return null;
+                }
+            }
+
+            createTaskCard(clientId, task) {
+                const container = document.getElementById('output-container');
+                
+                const card = document.createElement('div');
+                card.className = 'task-card';
+                card.id = `task-${clientId}`;
+                  card.innerHTML = `
+                    <div class="task-header">
+                        <h3 class="task-title" id="title-${clientId}">${task.title || 'Loading...'}</h3>
+                        <div class="task-meta">
+                            <span class="task-type">${task.type || 'regular'}</span>
+                            ${task.is_live_stream ? '<span class="live-indicator">🔴 LIVE</span>' : ''}
+                            <span class="task-status" id="status-${clientId}">${task.status}</span>
+                        </div>
+                    </div>
+                    ${task.progress ? `<div class="progress-bar"><div class="progress-fill" style="width: ${task.progress}%"></div></div>` : ''}
+                    <div class="task-url">${this.truncateUrl(task.url)}</div>
+                    ${task.is_live_stream ? '<div class="live-warning">⚠️ Live stream detected - connection issues are normal and handled automatically</div>' : ''}
+                    <div class="task-output" id="output-${clientId}"></div>                    <div class="task-actions" id="actions-${clientId}">
+                        <button class="btn-secondary btn-sm" onclick="downloadManager.toggleOutput('${clientId}')">Toggle Output</button>
+                        <button class="btn-danger btn-sm" id="cancel-${clientId}" onclick="downloadManager.cancelTask('${clientId}')" 
+                                ${this.isTaskFinished(task.status) ? 'disabled' : ''}>Cancel</button>
+                        <button class="btn-danger btn-sm" onclick="downloadManager.removeTask('${clientId}')">Remove</button>
+                    </div>
+                `;
+                
+                // Insert new tasks at the top (prepend instead of append)
+                container.insertBefore(card, container.firstChild);
+                this.updateTaskCard(clientId, task);
+            }            updateTaskCard(clientId, task) {
+                const titleElement = document.getElementById(`title-${clientId}`);
+                const statusElement = document.getElementById(`status-${clientId}`);
+                const outputElement = document.getElementById(`output-${clientId}`);
+                const cancelButton = document.getElementById(`cancel-${clientId}`);
+                const card = document.getElementById(`task-${clientId}`);
+                
+                if (titleElement && task.title) {
+                    titleElement.textContent = task.title;
+                }
+                
+                if (statusElement) {
+                    statusElement.textContent = task.status;
+                    statusElement.className = `task-status status-${task.status.split(':')[0]}`;
+                }
+                
+                // Update cancel button state
+                if (cancelButton) {
+                    cancelButton.disabled = this.isTaskFinished(task.status);
+                }
+                
+                if (outputElement && task.output) {
+                    outputElement.textContent = task.output.slice(-10).join('\n'); // Show last 10 lines
+                    outputElement.scrollTop = outputElement.scrollHeight;
+                }
+                
+                if (card) {
+                    card.className = `task-card status-${task.status.split(':')[0]}`;
+                    
+                    // Update progress bar
+                    let progressBar = card.querySelector('.progress-bar');
+                    if (task.progress) {
+                        if (!progressBar) {
+                            progressBar = document.createElement('div');
+                            progressBar.className = 'progress-bar';
+                            progressBar.innerHTML = '<div class="progress-fill"></div>';
+                            card.querySelector('.task-header').after(progressBar);
+                        }
+                        const fill = progressBar.querySelector('.progress-fill');
+                        fill.style.width = `${task.progress}%`;
+                    }
+                }
+            }
+
+            isTaskFinished(status) {
+                return status === 'finished' || status.startsWith('error') || status === 'cancelled';
+            }            toggleOutput(clientId) {
+                const outputElement = document.getElementById(`output-${clientId}`);
+                const task = this.tasks.get(clientId);
+                
+                if (outputElement.style.display === 'none') {
+                    outputElement.style.display = 'block';
+                    outputElement.textContent = task.output ? task.output.join('\n') : '';
+                    // Scroll to bottom when toggling output
+                    outputElement.scrollTop = outputElement.scrollHeight;
+                } else {
+                    outputElement.style.display = 'none';
+                }
+            }
+
+            async removeTask(clientId) {
+                const card = document.getElementById(`task-${clientId}`);
+                if (card) {
+                    card.remove();
+                    this.tasks.delete(clientId);
+                    this.showNotification('Task removed', 'info');
+                }
+            }
+
+            async cancelTask(clientId) {
+                try {
+                    const response = await fetch(`/cancel_download/${clientId}`, { method: 'POST' });
+                    if (response.ok) {
+                        this.showNotification('Download cancelled', 'info');
+                        await this.updateTaskStatus(clientId);
+                    }
+                } catch (error) {
+                    this.showNotification('Failed to cancel download', 'error');
+                }
+            }
+
+            async clearAllTasks() {
+                if (!confirm('Are you sure you want to clear all tasks?')) return;
+                
+                try {
+                    const response = await fetch('/clear_tasks', { method: 'POST' });
+                    const result = await response.json();
+                    
+                    if (response.ok) {
+                        document.getElementById('output-container').innerHTML = '';
+                        this.tasks.clear();
+                        this.showNotification('All tasks cleared successfully', 'success');
+                    } else {
+                        this.showNotification('Failed to clear tasks', 'error');
+                    }
+                } catch (error) {
+                    this.showNotification('Network error: Failed to clear tasks', 'error');
+                }
+            }
+
+            generateClientId() {
+                return 'client_' + Math.random().toString(36).substr(2, 16) + Date.now().toString(36);
+            }
+
+            truncateUrl(url, maxLength = 50) {
+                return url.length > maxLength ? url.substring(0, maxLength) + '...' : url;
+            }
+
+            showNotification(message, type = 'info') {
+                const notification = document.createElement('div');
+                notification.className = `notification notification-${type}`;
+                notification.textContent = message;
+                
+                document.body.appendChild(notification);
+                
+                // Animate in
+                requestAnimationFrame(() => {
+                    notification.classList.add('show');
+                });
+                
+                // Remove after 5 seconds
+                setTimeout(() => {
+                    notification.classList.remove('show');
+                    setTimeout(() => notification.remove(), 300);
+                }, 5000);
+            }
+
+            showLoading(show) {
+                const submitBtn = document.getElementById('submit-btn');
+                const vodBtn = document.getElementById('vod-download-btn');
+                
+                if (show) {
+                    submitBtn.disabled = true;
+                    vodBtn.disabled = true;
+                    submitBtn.textContent = 'Starting...';
+                } else {
+                    submitBtn.disabled = false;
+                    vodBtn.disabled = false;
+                    submitBtn.textContent = 'Download';
+                }
+            }
+        }
+
+        // Initialize when DOM is loaded
+        let downloadManager;
+        document.addEventListener('DOMContentLoaded', () => {
+            downloadManager = new DownloadManager();
+        });
+    </script>
+</head>
+<body>
+    <div class="container">        <header class="app-header">
+            <h1>YT-DLP Web Downloader</h1>
+        </header>
+
+        <main class="main-content">
+            <form id="download-form" class="download-form">
+                <div class="form-group">
+                    <label for="video-url">Video URL</label>
+                    <input 
+                        type="url" 
+                        id="video-url" 
+                        name="video-url" 
+                        placeholder="https://youtube.com/watch?v=..." 
+                        required
+                        autocomplete="url"
+                    >
+                </div>
+                
+                <div class="form-group">
+                    <label for="download-date">Date (for VOD downloads)</label>
+                    <input 
+                        type="date" 
+                        id="download-date" 
+                        name="download-date"
+                    >
+                </div>
+                
+                <div class="form-actions">
+                    <button type="submit" id="submit-btn" class="btn btn-primary">
+                        Download
+                    </button>                    <button type="button" id="vod-download-btn" class="btn btn-vod">
+                        VOD Download
+                    </button>
+                    <button type="button" id="clear-btn" class="btn btn-danger">
+                        Clear All
+                    </button>
+                </div>
+            </form>
+
+            <section class="tasks-section">
+                <h2>Active Downloads</h2>
+                <div id="output-container" class="tasks-container"></div>
+            </section>
+        </main>
+    </div>
+</body>
+</html>
