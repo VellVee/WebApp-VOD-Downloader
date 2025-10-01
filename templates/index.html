@@ -61,18 +61,46 @@
             }
 
             startPeriodicUpdates() {
+                // More frequent updates for active downloads (1 second)
                 setInterval(() => {
                     this.updateAllActiveTasks();
-                }, 2000); // Update every 2 seconds
+                }, 1000); // Update every 1 second for more responsive UI
+                
+                // Less frequent updates for checking new tasks
+                setInterval(() => {
+                    this.checkForNewTasks();
+                }, 5000);
             }
 
             async updateAllActiveTasks() {
+                // Update all tasks in parallel for better responsiveness
+                const promises = [];
                 for (const [clientId, task] of this.tasks.entries()) {
-                    if (task.status === 'started' || task.status === 'processing') {
-                        await this.updateTaskStatus(clientId);
+                    if (task && this.isTaskActive(task.status)) {
+                        promises.push(this.updateTaskStatus(clientId));
                     }
                 }
-            }            validateUrl(event) {
+                await Promise.all(promises);
+            }
+            
+            async checkForNewTasks() {
+                try {
+                    const response = await fetch('/get_tasks');
+                    const tasks = await response.json();
+                    
+                    // Check for new tasks
+                    for (const [clientId, task] of Object.entries(tasks)) {
+                        if (!this.tasks.has(clientId)) {
+                            this.createTaskCard(clientId, task);
+                            this.tasks.set(clientId, task);
+                        }
+                    }
+                } catch (error) {
+                    console.error("Error checking for new tasks:", error);
+                }
+            }
+            
+            validateUrl(event) {
                 const url = event.target.value.trim();
                 const submitBtn = document.getElementById('submit-btn');
                 const vodBtn = document.getElementById('vod-download-btn');
@@ -155,7 +183,7 @@
             async startTaskTracking(clientId) {
                 const updateTask = async () => {
                     const task = await this.updateTaskStatus(clientId);
-                    if (task && (task.status === 'started' || task.status === 'processing')) {
+                    if (task && this.isTaskActive(task.status)) {
                         setTimeout(updateTask, 1000);
                     }
                 };
@@ -209,7 +237,9 @@
                 // Insert new tasks at the top (prepend instead of append)
                 container.insertBefore(card, container.firstChild);
                 this.updateTaskCard(clientId, task);
-            }            updateTaskCard(clientId, task) {
+            }
+
+            updateTaskCard(clientId, task) {
                 const titleElement = document.getElementById(`title-${clientId}`);
                 const statusElement = document.getElementById(`status-${clientId}`);
                 const outputElement = document.getElementById(`output-${clientId}`);
@@ -237,9 +267,32 @@
                     cancelButton.disabled = this.isTaskFinished(task.status);
                 }
                 
+                // Update output - if visible, show all lines; if hidden, just update the data
                 if (outputElement && task.output) {
-                    outputElement.textContent = task.output.slice(-10).join('\n'); // Show last 10 lines
-                    outputElement.scrollTop = outputElement.scrollHeight;
+                    const isVisible = outputElement.style.display !== 'none';
+                    
+                    // Keep track of whether we were already scrolled to the bottom
+                    const wasAtBottom = isVisible && 
+                        (outputElement.scrollHeight - outputElement.clientHeight <= outputElement.scrollTop + 10);
+                    
+                    if (isVisible) {
+                        // Output is toggled open - show ALL lines and update in real-time
+                        outputElement.textContent = task.output.join('\n');
+                        
+                        // Highlight new lines that contain errors for better visibility
+                        if (task.output.some(line => line.toLowerCase().includes('error'))) {
+                            outputElement.classList.add('has-errors');
+                        }
+                    } else {
+                        // Output is hidden - just show last 10 lines (for when it's toggled)
+                        outputElement.textContent = task.output.slice(-10).join('\n');
+                    }
+                    
+                    // Auto-scroll to bottom if visible and was already at bottom before update
+                    // or if this is an active download (always scroll for active downloads)
+                    if (isVisible && (wasAtBottom || this.isTaskActive(task.status))) {
+                        outputElement.scrollTop = outputElement.scrollHeight;
+                    }
                 }
                 
                 if (card) {
@@ -261,14 +314,28 @@
             }
 
             isTaskFinished(status) {
-                return status === 'finished' || status.startsWith('error') || status === 'cancelled';
-            }            toggleOutput(clientId) {
+                if (!status) {
+                    return false;
+                }
+                const normalizedStatus = String(status).toLowerCase();
+                return normalizedStatus === 'finished' || normalizedStatus === 'cancelled' || normalizedStatus.startsWith('error');
+            }
+
+            isTaskActive(status) {
+                if (!status) {
+                    return false;
+                }
+                const normalizedStatus = String(status).toLowerCase();
+                return !this.isTaskFinished(normalizedStatus);
+            }
+
+            toggleOutput(clientId) {
                 const outputElement = document.getElementById(`output-${clientId}`);
                 const task = this.tasks.get(clientId);
                 
                 if (outputElement.style.display === 'none') {
                     outputElement.style.display = 'block';
-                    outputElement.textContent = task.output ? task.output.join('\n') : '';
+                    outputElement.textContent = task && task.output ? task.output.join('\n') : '';
                     // Scroll to bottom when toggling output
                     outputElement.scrollTop = outputElement.scrollHeight;
                 } else {

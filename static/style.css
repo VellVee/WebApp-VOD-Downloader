@@ -330,12 +330,25 @@ body {
     font-family: 'Monaco', 'Menlo', monospace;
     font-size: 0.8rem;
     white-space: pre-wrap;
-    max-height: 120px;
+    max-height: 200px; /* Increased height for better visibility */
     overflow-y: auto;
     margin-bottom: 12px;
     color: #cbd5e1;
     line-height: 1.4;
     display: none;
+    transition: background-color 0.3s ease;
+}
+
+/* Error highlighting */
+.task-output.has-errors {
+    border-color: rgba(239, 68, 68, 0.3);
+    background-color: rgba(30, 20, 25, 0.8);
+}
+
+/* Style for error text in output */
+.task-output:not(.has-errors) {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(148, 163, 184, 0.3) transparent;
 }
 
 .task-actions {

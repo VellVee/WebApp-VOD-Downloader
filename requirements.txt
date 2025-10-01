@@ -1,3 +1,12 @@
-Flask==3.0.0
-Werkzeug==3.0.1
-requests
+# Web Framework
+Flask==3.0.3
+Werkzeug==3.0.3
+
+# Video Downloader (REQUIRED)
+yt-dlp>=2024.1.0
+
+# Note: aria2c is an external binary that must be installed separately
+# Windows: winget install aria2.aria2
+# Linux: sudo apt install aria2 (or equivalent)
+# macOS: brew install aria2
+# Download: https://github.com/aria2/aria2/releases
