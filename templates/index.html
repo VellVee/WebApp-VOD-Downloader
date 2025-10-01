@@ -221,7 +221,14 @@
                 }
                 
                 if (statusElement) {
-                    statusElement.textContent = task.status;
+                    // Build status text with additional info
+                    let statusText = task.status;
+                    if (task.speed || task.eta) {
+                        statusText += ' - ';
+                        if (task.speed) statusText += task.speed;
+                        if (task.eta) statusText += ` (ETA: ${task.eta})`;
+                    }
+                    statusElement.textContent = statusText;
                     statusElement.className = `task-status status-${task.status.split(':')[0]}`;
                 }
                 

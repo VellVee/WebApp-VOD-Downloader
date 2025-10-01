@@ -27,7 +27,7 @@ app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-secret-key-change-i
 # Configuration
 class Config:
     TASK_FILE = 'tasks.json'
-    DOWNLOAD_PATH = r'\\192.168.42.3\VaultStorage\MEDIA\Other\Pokreightyes'
+    DOWNLOAD_PATH = r'\\192.168.42.3\VaultStorage\ALL TO SORT'
     VOD_DOWNLOAD_PATH = r'\\192.168.42.3\VaultStorage\WorkMedia\VODS'
     
     YT_DLP_COMMON_ARGS = [
@@ -47,6 +47,8 @@ class Config:
 
 task_status: Dict[str, Dict[str, Any]] = {}
 active_processes: Dict[str, 'YTDLPDownloader'] = {}  # Track active downloader instances
+_last_save_time = 0  # Track last save time for throttling
+_save_lock = threading.Lock()  # Thread-safe saving
 
 class TaskManager:
     @staticmethod
@@ -65,13 +67,22 @@ class TaskManager:
             task_status = {}
 
     @staticmethod
-    def save_tasks() -> None:
-        """Save tasks to JSON file"""
-        try:
-            with open(Config.TASK_FILE, 'w', encoding='utf-8') as f:
-                json.dump(task_status, f, indent=2, ensure_ascii=False)
-        except IOError as e:
-            logger.error(f"Failed to save tasks: {e}")
+    def save_tasks(force: bool = False) -> None:
+        """Save tasks to JSON file with throttling to reduce I/O"""
+        global _last_save_time
+        current_time = time.time()
+        
+        # Throttle saves to once per second unless forced
+        if not force and (current_time - _last_save_time) < 1.0:
+            return
+        
+        with _save_lock:
+            try:
+                with open(Config.TASK_FILE, 'w', encoding='utf-8') as f:
+                    json.dump(task_status, f, indent=2, ensure_ascii=False)
+                _last_save_time = current_time
+            except IOError as e:
+                logger.error(f"Failed to save tasks: {e}")
 
     @staticmethod
     def generate_client_id() -> str:
@@ -103,7 +114,7 @@ class TaskManager:
             logger.info(f"Removed old task: {client_id}")
         
         if to_remove:
-            TaskManager.save_tasks()
+            TaskManager.save_tasks(force=True)
 
 class YTDLPDownloader:
     def __init__(self, client_id: str, url: str, download_type: str = 'regular', date: str = None):
@@ -294,10 +305,27 @@ class YTDLPDownloader:
                     
                     # Extract progress information - handle both yt-dlp and aria2c progress
                     if '[download]' in line and '%' in line:
-                        # Standard yt-dlp progress
-                        progress_match = re.search(r'(\d+\.\d+)%', line)
+                        # Standard yt-dlp progress with speed and ETA
+                        # Example: [download]  45.2% of 123.45MiB at 2.34MiB/s ETA 00:30
+                        progress_match = re.search(r'(\d+\.?\d*)%', line)
                         if progress_match:
                             task_status[self.client_id]['progress'] = float(progress_match.group(1))
+                        
+                        # Extract file size
+                        size_match = re.search(r'of\s+(\d+\.?\d*\s*[KMG]i?B)', line)
+                        if size_match:
+                            task_status[self.client_id]['file_size'] = size_match.group(1)
+                        
+                        # Extract download speed
+                        speed_match = re.search(r'at\s+(\d+\.?\d*\s*[KMG]i?B/s)', line)
+                        if speed_match:
+                            task_status[self.client_id]['speed'] = speed_match.group(1)
+                        
+                        # Extract ETA
+                        eta_match = re.search(r'ETA\s+(\d+:\d+)', line)
+                        if eta_match:
+                            task_status[self.client_id]['eta'] = eta_match.group(1)
+                            
                     elif 'aria2c' in line and '%' in line:
                         # aria2c progress format: (1/1375)[#######.......] 50%[...] (speed info)
                         progress_match = re.search(r'(\d+)%', line)
@@ -542,7 +570,8 @@ def health_check():
         'status': 'healthy',
         'active_tasks': len([t for t in task_status.values() if t.get('status') not in ['finished', 'error', 'cancelled']]),
         'total_tasks': len(task_status),
-        'live_stream_support': 'enabled'
+        'live_stream_support': 'enabled',
+        'active_processes': len(active_processes)
     })
 
 @app.route('/stream_info', methods=['GET'])
