@@ -595,15 +595,19 @@ def remove_task(client_id):
     if client_id not in task_status:
         return jsonify({'error': 'Task not found'}), 404
     
-    # Cancel download if active
+    # Cancel download if active and wait for it to complete
     if client_id in active_downloaders:
         downloader = active_downloaders[client_id]
+        logger.info(f"Cancelling active download for {client_id} before removal")
         downloader.cancel_download()
         del active_downloaders[client_id]
+        # Give a moment for the cancellation to propagate
+        time.sleep(0.5)
     
     # Remove from task status
     del task_status[client_id]
     TaskManager.save_tasks()
+    logger.info(f"Task {client_id} removed successfully")
     
     return jsonify({'message': 'Task removed successfully'})
 
