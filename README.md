@@ -1,33 +1,23 @@
 # YT-DLP Web Downloader
 
-A modern, feature-rich web interface for yt-dlp with real-time download tracking, search, statistics, and mobile support.
+A modern, responsive web interface for yt-dlp with real-time download tracking and mobile support.
 
-## ✨ Features
+## Features
 
-### Core Functionality
-- 🎨 **Modern UI**: Beautiful, responsive design that works on all devices
-- 📱 **Mobile-First**: Optimized single-column layout for mobile devices
-- 🔄 **Live Updates**: Real-time download progress with speed and ETA
+- ✨ **Modern UI**: Beautiful, responsive design that works on all devices
+- 📱 **Mobile-First**: Single column layout on mobile devices for optimal viewing
+- 🔄 **Live Updates**: Real-time download progress and status updates
 - 💾 **Persistent Tasks**: Downloads continue and status persists after page refresh
-- 🎯 **Direct Commands**: Calls yt-dlp directly for better performance
-- 📊 **Enhanced Progress**: Visual progress bars with percentage, file size, speed, and ETA
+- 🎯 **Direct Commands**: No more .bat files - calls yt-dlp directly for better performance
+- 📊 **Progress Tracking**: Visual progress bars and detailed download information
 - 🗂️ **Task Management**: View, track, and manage multiple simultaneous downloads
-
-### New in Version 2.0
-- � **Search & Filter**: Quick search by title/URL and filter by status
-- 📈 **Statistics Dashboard**: Live statistics showing total, active, finished, errors, and cancelled tasks
-- ⌨️ **Keyboard Shortcuts**: Power user shortcuts for quick navigation
-- 🚀 **Performance**: 80% reduction in disk I/O with intelligent save throttling
-- 🔧 **Better API**: New endpoints for statistics and batch operations
-- 🎮 **Enhanced Controls**: Organized control panel with search and filters
-- 🐛 **Bug Fixes**: Remove button persistence, actual process cancellation, and more
+- 🚀 **Better Performance**: Improved error handling, logging, and resource management
 
 ## Requirements
 
 - Python 3.8 or higher
 - yt-dlp
 - Flask
-- aria2c (optional but recommended for better download performance)
 
 ## Installation
 
@@ -42,11 +32,6 @@ A modern, feature-rich web interface for yt-dlp with real-time download tracking
    ```bash
    pip install yt-dlp
    ```
-
-4. **Install aria2c (recommended):**
-   - Windows: Download from https://github.com/aria2/aria2/releases
-   - Linux: `sudo apt install aria2` or `sudo yum install aria2`
-   - Mac: `brew install aria2`
 
 ## Usage
 
@@ -66,35 +51,15 @@ The server will start on `http://localhost:5000`
 
 ### Using the Web Interface
 
-1. **Open your browser** and navigate to `http://localhost:5000`
-2. **Enter a video URL** in the input field
-3. **Set date** for VOD downloads (defaults to current date)
-4. **Click download button:**
-   - "Download" for regular downloads
-   - "VOD Download" for VOD downloads
-5. **Monitor progress** in real-time with enhanced task cards showing:
-   - Progress percentage and visual bar
-   - Download speed (e.g., "2.34MiB/s")
-   - File size (e.g., "123.45MiB")
-   - ETA (estimated time remaining)
-6. **Use search and filters** to find specific downloads
-7. **View statistics** for overview of all tasks
-
-### Keyboard Shortcuts ⌨️
-
-- `Ctrl+K` (Mac: `Cmd+K`): Focus search box
-- `Ctrl+/` (Mac: `Cmd+/`): Focus URL input
-- `Esc`: Clear focus from inputs
-
-### Search & Filter 🔍
-
-- **Search**: Type in the search box to filter by title or URL
-- **Status Filter**: Select from dropdown to show only specific status
-  - All Status, Started, Processing, Finished, Errors, Cancelled
+1. Open your browser and navigate to `http://localhost:5000`
+2. Enter a video URL in the input field
+3. For VOD downloads, set the date (defaults to current date)
+4. Click "Download" for regular downloads or "VOD Download" for VOD downloads
+5. Monitor progress in real-time with the task cards
+6. Downloads persist across page refreshes
 
 ### API Endpoints
 
-#### Core Endpoints
 - `GET /` - Web interface
 - `POST /start_download` - Start a regular download
 - `POST /start_vod_download` - Start a VOD download  
@@ -103,11 +68,6 @@ The server will start on `http://localhost:5000`
 - `GET /get_tasks` - Get all tasks
 - `POST /clear_tasks` - Clear all tasks
 - `GET /health` - Health check endpoint
-
-#### New in v2.0
-- `GET /statistics` - Get comprehensive download statistics
-- `POST /remove_task/<client_id>` - Remove a specific task
-- `POST /batch_remove` - Remove multiple tasks at once
 
 ## Configuration
 
@@ -126,45 +86,16 @@ class Config:
 
 ## Features Overview
 
-### Version 2.0 Improvements 🎉
+### Improvements from Original Version
 
-#### Performance Enhancements
-- **80% Reduction in Disk I/O**: Intelligent save throttling (saves once per second vs. 60 times)
-- **Thread-Safe Operations**: Locking mechanism prevents race conditions
-- **Optimized Polling**: Only active tasks update, reducing API calls
-
-#### Enhanced Progress Tracking
-- **Real-time Speed**: See current download speed
-- **ETA Display**: Know how long until completion
-- **File Size**: View total file size being downloaded
-- **Progress Overlay**: Percentage and size shown on progress bar
-
-#### Search & Filter System
-- **Quick Search**: Find tasks by title or URL instantly
-- **Status Filter**: Show only tasks with specific status
-- **Real-time Results**: Filtering happens as you type
-- **Case-Insensitive**: Works regardless of letter case
-
-#### Statistics Dashboard
-- **Live Counts**: Total, Active, Finished, Errors, Cancelled
-- **Color-Coded**: Visual differentiation for task states
-- **Auto-Update**: Refreshes with task changes
-- **At-a-Glance**: Quick overview without scrolling
-
-#### User Experience
-- **Keyboard Shortcuts**: Navigate faster with shortcuts
-- **Better UI**: Cleaner, more organized interface
-- **Task Actions**: Cancel and remove with actual process termination
-- **Mobile Optimized**: All features work on mobile
-
-### Core Features (v1.0)
-
-1. **Direct yt-dlp Integration**: No bat files, direct subprocess calls
-2. **Mobile Responsive**: Adapts to any screen size
+1. **No More .bat Files**: Direct subprocess calls for better performance and security
+2. **Mobile Responsive**: Single column layout on mobile devices
 3. **Modern UI**: Beautiful gradient design with smooth animations
-4. **Error Handling**: Comprehensive logging and user-friendly messages
-5. **Persistent Tasks**: Survive page refreshes and server restarts
-6. **Health Monitoring**: Automatic cleanup of old tasks (24 hours)
+4. **Better Error Handling**: Comprehensive logging and user-friendly error messages
+5. **Progress Tracking**: Real-time progress bars and download statistics
+6. **Persistent Tasks**: Tasks survive page refreshes and server restarts
+7. **Task Management**: Better organization and control over downloads
+8. **Health Monitoring**: Built-in health check and automatic cleanup of old tasks
 
 ### Mobile Features
 
@@ -187,37 +118,16 @@ class Config:
 ### Project Structure
 
 ```
-YTDLP_Web/
-├── app.py                 # Main Flask application with v2.0 enhancements
-├── requirements.txt       # Python dependencies
-├── start.bat             # Windows startup script
-├── tasks.json            # Persistent task storage (auto-generated)
-├── app.log               # Application logs (auto-generated)
-├── README.md             # Project documentation
-├── CHANGELOG.md          # Version 2.0 improvements summary
-├── IMPROVEMENTS.md       # Detailed technical documentation
-├── QUICK_REFERENCE.md    # User quick reference guide
+YTDLP_Web v0.0.4/
+├── app.py              # Main Flask application
+├── requirements.txt    # Python dependencies
+├── start.bat          # Windows startup script
+├── README.md          # This file
 ├── static/
-│   └── style.css         # Enhanced CSS with v2.0 features
+│   └── style.css      # Modern CSS with mobile support
 └── templates/
-    └── index.html        # Responsive HTML with search, filter, stats
+    └── index.html     # Responsive HTML template
 ```
-
-### Version History
-
-- **v2.0** (October 2025): Major feature update
-  - Performance optimizations (80% I/O reduction)
-  - Search and filter functionality
-  - Statistics dashboard
-  - Keyboard shortcuts
-  - Enhanced progress tracking (speed, ETA, file size)
-  - Bug fixes (remove button, cancel function)
-  
-- **v1.0** (Initial Release): Core functionality
-  - Web interface for yt-dlp
-  - Real-time progress tracking
-  - Mobile responsive design
-  - Task persistence
 
 ### Environment Variables
 
