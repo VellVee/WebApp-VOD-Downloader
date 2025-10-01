@@ -68,7 +68,7 @@
 
             async updateAllActiveTasks() {
                 for (const [clientId, task] of this.tasks.entries()) {
-                    if (task.status === 'started' || task.status === 'processing') {
+                    if (task.status === 'started' || task.status === 'processing' || task.status === 'waiting') {
                         await this.updateTaskStatus(clientId);
                     }
                 }
@@ -104,6 +104,8 @@
                 
                 const url = document.getElementById('video-url').value.trim();
                 const date = document.getElementById('download-date').value.trim();
+                const delayEnabled = document.getElementById('delay-enabled').checked;
+                const delayMinutes = delayEnabled ? parseInt(document.getElementById('delay-minutes').value) || 240 : 0;
                 
                 if (!url) {
                     this.showNotification('Please enter a URL', 'error');
@@ -112,7 +114,11 @@
 
                 const clientId = this.generateClientId();
                 const endpoint = type === 'vod' ? '/start_vod_download' : '/start_download';
-                const payload = { url, client_id: clientId };
+                const payload = { 
+                    url, 
+                    client_id: clientId,
+                    delay_minutes: delayMinutes
+                };
                 
                 if (type === 'vod') {
                     payload.date = date;
@@ -130,17 +136,19 @@
                     
                     if (response.ok) {
                         this.createTaskCard(clientId, {
-                            status: 'started',
+                            status: result.status,
                             output: [result.message],
-                            title: 'Starting download...',
+                            title: delayMinutes > 0 ? 'Waiting...' : 'Starting download...',
                             type: type,
                             url: url,
-                            date: date
+                            date: date,
+                            delay_minutes: delayMinutes,
+                            start_time: Date.now() / 1000 + (delayMinutes * 60)
                         });
                         
                         this.tasks.set(clientId, result);
                         document.getElementById('video-url').value = '';
-                        this.showNotification('Download started successfully', 'success');
+                        this.showNotification(delayMinutes > 0 ? `Download scheduled in ${delayMinutes} minutes` : 'Download started successfully', 'success');
                         this.startTaskTracking(clientId);
                     } else {
                         this.showNotification(result.error || 'Failed to start download', 'error');
@@ -195,6 +203,7 @@
                             <span class="task-status" id="status-${clientId}">${task.status}</span>
                         </div>
                     </div>
+                    ${task.status === 'waiting' ? `<div class="timer-display" id="timer-${clientId}">Starting in: calculating...</div>` : ''}
                     ${task.progress ? `<div class="progress-bar"><div class="progress-fill" style="width: ${task.progress}%"></div></div>` : ''}
                     <div class="task-url">${this.truncateUrl(task.url)}</div>
                     ${task.is_live_stream ? '<div class="live-warning">⚠️ Live stream detected - connection issues are normal and handled automatically</div>' : ''}
@@ -215,6 +224,7 @@
                 const outputElement = document.getElementById(`output-${clientId}`);
                 const cancelButton = document.getElementById(`cancel-${clientId}`);
                 const card = document.getElementById(`task-${clientId}`);
+                const timerElement = document.getElementById(`timer-${clientId}`);
                 
                 if (titleElement && task.title) {
                     titleElement.textContent = task.title;
@@ -223,6 +233,41 @@
                 if (statusElement) {
                     statusElement.textContent = task.status;
                     statusElement.className = `task-status status-${task.status.split(':')[0]}`;
+                }
+                
+                // Update timer display
+                if (task.status === 'waiting' && task.start_time) {
+                    const now = Date.now() / 1000;
+                    const remaining = Math.max(0, task.start_time - now);
+                    
+                    if (remaining > 0) {
+                        const hours = Math.floor(remaining / 3600);
+                        const minutes = Math.floor((remaining % 3600) / 60);
+                        const seconds = Math.floor(remaining % 60);
+                        
+                        const timeStr = hours > 0 
+                            ? `${hours}h ${minutes}m ${seconds}s`
+                            : minutes > 0
+                                ? `${minutes}m ${seconds}s`
+                                : `${seconds}s`;
+                        
+                        if (timerElement) {
+                            timerElement.textContent = `Starting in: ${timeStr}`;
+                        } else {
+                            // Add timer element if it doesn't exist
+                            const headerElement = card.querySelector('.task-header');
+                            if (headerElement) {
+                                const timerDiv = document.createElement('div');
+                                timerDiv.className = 'timer-display';
+                                timerDiv.id = `timer-${clientId}`;
+                                timerDiv.textContent = `Starting in: ${timeStr}`;
+                                headerElement.after(timerDiv);
+                            }
+                        }
+                    }
+                } else if (timerElement && task.status !== 'waiting') {
+                    // Remove timer when no longer waiting
+                    timerElement.remove();
                 }
                 
                 // Update cancel button state
@@ -399,14 +444,36 @@
                 </div>
                 
                 <div class="form-actions">
-                    <button type="submit" id="submit-btn" class="btn btn-primary">
-                        Download
-                    </button>                    <button type="button" id="vod-download-btn" class="btn btn-vod">
-                        VOD Download
-                    </button>
-                    <button type="button" id="clear-btn" class="btn btn-danger">
-                        Clear All
-                    </button>
+                    <div class="form-actions-left">
+                        <button type="submit" id="submit-btn" class="btn btn-primary">
+                            Download
+                        </button>
+                        <button type="button" id="vod-download-btn" class="btn btn-vod">
+                            VOD Download
+                        </button>
+                        <button type="button" id="clear-btn" class="btn btn-danger">
+                            Clear All
+                        </button>
+                    </div>
+                    
+                    <div class="delay-group">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="delay-enabled" name="delay-enabled">
+                            <span>Delay start</span>
+                        </label>
+                        <div class="delay-input-group">
+                            <input 
+                                type="number" 
+                                id="delay-minutes" 
+                                name="delay-minutes"
+                                placeholder="240"
+                                value="240"
+                                min="1"
+                                max="10080"
+                            >
+                            <span class="input-suffix">min</span>
+                        </div>
+                    </div>
                 </div>
             </form>
 

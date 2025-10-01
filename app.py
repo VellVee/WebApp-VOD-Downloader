@@ -106,12 +106,14 @@ class TaskManager:
             TaskManager.save_tasks()
 
 class YTDLPDownloader:
-    def __init__(self, client_id: str, url: str, download_type: str = 'regular', date: str = None):
+    def __init__(self, client_id: str, url: str, download_type: str = 'regular', date: str = None, delay_minutes: int = 0):
         self.client_id = client_id
         self.url = url
         self.download_type = download_type
         self.date = date
+        self.delay_minutes = delay_minutes
         self.process: Optional[subprocess.Popen] = None
+        self.cancelled = False
 
     @staticmethod
     def sanitize_filename(filename: str, max_length: int = 50) -> str:
@@ -242,20 +244,58 @@ class YTDLPDownloader:
     def run_download(self) -> None:
         """Execute the download process"""
         try:            # Initialize task
+            start_time = time.time() + (self.delay_minutes * 60)
             task_status[self.client_id] = {
-                'status': 'started',
-                'output': [f"Started processing URL: {self.url}"],
-                'title': 'Processing...',
+                'status': 'waiting' if self.delay_minutes > 0 else 'started',
+                'output': [f"Task created for URL: {self.url}"],
+                'title': 'Waiting...' if self.delay_minutes > 0 else 'Processing...',
                 'created_at': time.time(),
                 'type': self.download_type,
                 'url': self.url,
-                'date': self.date
+                'date': self.date,
+                'delay_minutes': self.delay_minutes,
+                'start_time': start_time
             }
             
             # Store this downloader instance for cancellation
             active_downloaders[self.client_id] = self
             
-            TaskManager.save_tasks()# Build and execute command
+            TaskManager.save_tasks()
+            
+            # Handle delay if specified
+            if self.delay_minutes > 0:
+                task_status[self.client_id]['output'].append(f"Download will start in {self.delay_minutes} minutes")
+                TaskManager.save_tasks()
+                
+                # Wait with periodic checks for cancellation
+                wait_time = self.delay_minutes * 60
+                check_interval = 5  # Check every 5 seconds
+                elapsed = 0
+                
+                while elapsed < wait_time:
+                    if self.cancelled:
+                        task_status[self.client_id]['status'] = 'cancelled'
+                        task_status[self.client_id]['output'].append('Download cancelled during delay')
+                        TaskManager.save_tasks()
+                        if self.client_id in active_downloaders:
+                            del active_downloaders[self.client_id]
+                        return
+                    
+                    time.sleep(min(check_interval, wait_time - elapsed))
+                    elapsed += check_interval
+                    
+                    # Update remaining time
+                    remaining = max(0, wait_time - elapsed)
+                    task_status[self.client_id]['time_remaining'] = remaining
+                    TaskManager.save_tasks()
+                
+                task_status[self.client_id]['output'].append('Delay completed, starting download...')
+                task_status[self.client_id]['status'] = 'started'
+                task_status[self.client_id]['title'] = 'Processing...'
+                del task_status[self.client_id]['time_remaining']
+                TaskManager.save_tasks()
+            
+            task_status[self.client_id]['output'].append(f"Started processing URL: {self.url}")# Build and execute command
             cmd = self.build_command()
             logger.info(f"Executing command for {self.client_id}: {' '.join(cmd)}")
             
@@ -465,6 +505,8 @@ class YTDLPDownloader:
 
     def cancel_download(self) -> bool:
         """Cancel the running download"""
+        self.cancelled = True
+        
         if self.process and self.process.poll() is None:
             try:
                 # Kill the entire process tree (including aria2c)
@@ -511,16 +553,18 @@ def start_download():
         url = YTDLPDownloader.extract_url_from_text(url_input)
         
         client_id = data.get('client_id', TaskManager.generate_client_id())
-        logger.info(f"Starting regular download for {client_id}: {url}")
+        delay_minutes = int(data.get('delay_minutes', 0))
+        
+        logger.info(f"Starting regular download for {client_id}: {url} (delay: {delay_minutes} min)")
 
-        downloader = YTDLPDownloader(client_id, url, 'regular')
+        downloader = YTDLPDownloader(client_id, url, 'regular', delay_minutes=delay_minutes)
         thread = threading.Thread(target=downloader.run_download, daemon=True)
         thread.start()
 
         return jsonify({
-            'message': f"Started processing URL: {url}",
+            'message': f"Task created for URL: {url}" + (f" (starts in {delay_minutes} minutes)" if delay_minutes > 0 else ""),
             'client_id': client_id,
-            'status': 'started'
+            'status': 'waiting' if delay_minutes > 0 else 'started'
         })
 
     except Exception as e:
@@ -544,16 +588,18 @@ def start_vod_download():
         url = YTDLPDownloader.extract_url_from_text(url_input)
         
         client_id = data.get('client_id', TaskManager.generate_client_id())
-        logger.info(f"Starting VOD download for {client_id}: {url} (date: {date})")
+        delay_minutes = int(data.get('delay_minutes', 0))
+        
+        logger.info(f"Starting VOD download for {client_id}: {url} (date: {date}, delay: {delay_minutes} min)")
 
-        downloader = YTDLPDownloader(client_id, url, 'vod', date)
+        downloader = YTDLPDownloader(client_id, url, 'vod', date, delay_minutes=delay_minutes)
         thread = threading.Thread(target=downloader.run_download, daemon=True)
         thread.start()
 
         return jsonify({
-            'message': f"Started processing VOD URL: {url}" + (f" with date: {date}" if date else ""),
+            'message': f"Task created for VOD URL: {url}" + (f" with date: {date}" if date else "") + (f" (starts in {delay_minutes} minutes)" if delay_minutes > 0 else ""),
             'client_id': client_id,
-            'status': 'started'
+            'status': 'waiting' if delay_minutes > 0 else 'started'
         })
 
     except Exception as e:

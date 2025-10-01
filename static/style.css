@@ -88,6 +88,14 @@ body {
 /* Button styles */
 .form-actions {
     display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.form-actions-left {
+    display: flex;
     gap: 12px;
     flex-wrap: wrap;
 }
@@ -501,5 +509,98 @@ body {
     }
     100% {
         left: 100%;
+    }
+}
+
+/* Delay controls */
+.delay-group {
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    border-radius: 8px;
+    padding: 12px 16px;
+    background: rgba(15, 20, 25, 0.4);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-shrink: 0;
+}
+
+.checkbox-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    margin: 0;
+    white-space: nowrap;
+}
+
+.checkbox-label input[type="checkbox"] {
+    width: auto;
+    cursor: pointer;
+    margin: 0;
+}
+
+.delay-input-group {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.delay-input-group input[type="number"] {
+    width: 80px;
+    padding: 6px 10px;
+}
+
+.input-suffix {
+    color: #94a3b8;
+    font-size: 0.875rem;
+    white-space: nowrap;
+}
+
+/* Timer display */
+.timer-display {
+    background: rgba(30, 41, 59, 0.9);
+    border: 1px solid rgba(59, 130, 246, 0.5);
+    border-radius: 8px;
+    padding: 12px 16px;
+    margin: 12px 0;
+    font-weight: 600;
+    color: #ffffff;
+    text-align: center;
+    font-size: 1.1rem;
+    animation: pulse-timer 2s ease-in-out infinite;
+}
+
+@keyframes pulse-timer {
+    0%, 100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.8;
+    }
+}
+
+.status-waiting {
+    background: rgba(59, 130, 246, 0.9);
+    color: #ffffff;
+}
+
+/* Mobile responsive adjustments */
+@media (max-width: 768px) {
+    .form-actions {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    
+    .form-actions-left {
+        width: 100%;
+    }
+    
+    .delay-group {
+        width: 100%;
+        justify-content: space-between;
+    }
+    
+    .delay-input-group {
+        margin-left: auto;
     }
 }
