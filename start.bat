@@ -31,9 +31,17 @@ git rev-parse origin/main > remote_commit.tmp
 fc current_commit.tmp remote_commit.tmp >nul 2>&1
 if %errorlevel% neq 0 (
     echo [UPDATE AVAILABLE] New version found on GitHub!
+    echo [INFO] Auto-updating in 5 seconds... Press N/n to skip.
     echo.
-    set /p update="Would you like to update? (y/n): "
-    if /i "!update!"=="y" (
+    
+    choice /c YNyn /t 5 /d Y /m "Update"
+    if !errorlevel! equ 2 (
+        echo [INFO] Update skipped by user.
+        echo.
+    ) else if !errorlevel! equ 4 (
+        echo [INFO] Update skipped by user.
+        echo.
+    ) else (
         echo [INFO] Updating from GitHub...
         git pull origin main
         if %errorlevel% equ 0 (
@@ -43,9 +51,6 @@ if %errorlevel% neq 0 (
             echo [ERROR] Update failed. Continuing with current version.
             echo.
         )
-    ) else (
-        echo [INFO] Skipping update.
-        echo.
     )
 ) else (
     echo [OK] Already up to date.
