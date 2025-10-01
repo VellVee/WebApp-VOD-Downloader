@@ -145,12 +145,40 @@ if %errorlevel% neq 0 (
 )
 echo.
 
+:: Check Waitress (production WSGI server)
+echo [CHECK] Verifying Waitress (production server)...
+python -c "import waitress" >nul 2>&1
+if %errorlevel% neq 0 (
+    echo [INFO] Waitress not found. Installing...
+    python -m pip install -q waitress
+    if %errorlevel% neq 0 (
+        echo [WARNING] Failed to install Waitress. Will use development server.
+        set USE_WAITRESS=0
+    ) else (
+        echo [OK] Waitress installed.
+        set USE_WAITRESS=1
+    )
+) else (
+    echo [OK] Waitress is installed.
+    set USE_WAITRESS=1
+)
+echo.
+
 echo ========================================
 echo All checks passed!
-echo Starting server on http://localhost:5000
+if !USE_WAITRESS! equ 1 (
+    echo Starting production server on http://0.0.0.0:5000
+    echo Using Waitress WSGI server
+) else (
+    echo Starting development server on http://localhost:5000
+)
 echo Press Ctrl+C to stop the server
 echo ========================================
 echo.
 
-python app.py
+if !USE_WAITRESS! equ 1 (
+    python -c "from waitress import serve; from app import app; serve(app, host='0.0.0.0', port=5000, threads=6)"
+) else (
+    python app.py
+)
 pause

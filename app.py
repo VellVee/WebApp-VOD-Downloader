@@ -724,7 +724,13 @@ if __name__ == '__main__':
     
     # Run the application
     port = int(os.environ.get('PORT', 5000))
-    debug = os.environ.get('DEBUG', 'true').lower() == 'true'
+    debug = os.environ.get('DEBUG', 'false').lower() == 'true'
     
     logger.info(f"Starting server on port {port}, debug={debug}")
-    app.run(host='0.0.0.0', port=port, debug=debug)
+    
+    if debug:
+        logger.warning("Running in DEBUG mode - not suitable for production!")
+        app.run(host='0.0.0.0', port=port, debug=True)
+    else:
+        logger.info("Running in production mode")
+        app.run(host='0.0.0.0', port=port, debug=False, threaded=True)
