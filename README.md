@@ -1,63 +1,44 @@
-# YT-DLP Web Downloader
+# Web Video Downloader
 
 Web interface for yt-dlp with real-time download tracking.
 
-## Requirements
+## Features
 
-- Python 3.8+
-- yt-dlp
-- Flask
-- aria2c (optional, for faster downloads)
+- **Web UI**: Shows all the downloads that are currently running or waiting in the queue.
+- **Full Control**: Cancel active downloads, stop all threads, or clear finished items cleanly from the UI.
+- **Two Profiles**: 
+  - 🟧 **Regular Download**: Standard download.
+  - 🟪 **VOD Download**: Prepends the selected date to both the folder and filename for archival purposes.
+- **Delayed Downloads**: Optionally set a time delay before the download begins (for streams or videos that are still processing/unfinished).
 
 ## Installation
 
-Install dependencies:
+### Prerequisites
+- Python 3.8+
+- [FFmpeg](https://ffmpeg.org/download.html)
+
+### Setup (Windows)
+Double click `start.bat`. This script will:
+1. Validate your Python installation.
+2. Ensure `pip` and other requirements are up to date.
+3. Start the production `waitress` server on `localhost:5000`.
+
+### Setup (Linux)
+Execute the `start.sh` script:
 ```bash
-pip install -r requirements.txt
-pip install yt-dlp
+chmod +x start.sh
+./start.sh
 ```
+This script acts similarly, automatically checking and building a python `venv`, upgrading `yt-dlp`, and launching `waitress`.
 
 ## Usage
+Once the server is running, navigate to `http://localhost:5000` or the hosted machine's IP address on your LAN.
 
-Start server:
-```bash
-python app.py
-```
+1. Click the top right menu icon to set your LAN `Default Save Path` and `VOD Save Path`. By default, the admin password is `admin` (adjustable in `settings.json` - created on first run).
+2. Paste link into the input field.
+3. Select profile - Regular or VOD
 
-Access at `http://localhost:5000`
-
-## Configuration
-
-Edit `Config` class in `app.py`:
-
-```python
-class Config:
-    DOWNLOAD_PATH = r'\\your\download\path'
-    VOD_DOWNLOAD_PATH = r'\\your\vod\path'
-```
-
-## API Endpoints
-
-- `POST /start_download` - Start regular download
-- `POST /start_vod_download` - Start VOD download  
-- `GET /status/<client_id>` - Get download status
-- `POST /cancel_download/<client_id>` - Cancel download
-- `POST /remove_task/<client_id>` - Remove task
-- `GET /get_tasks` - Get all tasks
-- `POST /clear_tasks` - Clear all tasks
-
-## Features
-
-- Real-time progress tracking
-- Persistent task storage
-- Multiple simultaneous downloads
-- Process cancellation with cleanup
-- Automatic timeout handling
-- Mobile responsive interface
-
-## Troubleshooting
-
-Check `app.log` for errors.
-
-Ensure yt-dlp is in PATH and download directories are accessible.
-
+## Built With
+- `Flask` & `Waitress` WSGI server 
+- `yt-dlp`
+- CSS & Javascript

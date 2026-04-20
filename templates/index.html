@@ -1,487 +1,139 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>YT-DLP Web Downloader</title>
+    <title>Web Video Downloader</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/static/style.css">
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <script>
-        class DownloadManager {
-            constructor() {
-                this.tasks = new Map();
-                this.init();
-            }
-
-            init() {
-                this.setupEventListeners();
-                this.setDefaultDate();
-                this.loadExistingTasks();
-                this.startPeriodicUpdates();
-            }
-
-            setupEventListeners() {
-                document.getElementById('download-form').addEventListener('submit', (e) => this.handleDownload(e, 'regular'));
-                document.getElementById('vod-download-btn').addEventListener('click', (e) => this.handleDownload(e, 'vod'));
-                document.getElementById('clear-btn').addEventListener('click', () => this.clearAllTasks());
-                
-                // Add input validation
-                const urlInput = document.getElementById('video-url');
-                urlInput.addEventListener('input', this.validateUrl.bind(this));
-            }
-
-            setDefaultDate() {
-                const dateInput = document.getElementById('download-date');
-                const currentDate = new Date().toISOString().slice(0, 10);
-                dateInput.value = currentDate;
-                dateInput.placeholder = currentDate;
-            }
-
-            async loadExistingTasks() {
-                try {
-                    const response = await fetch('/get_tasks');
-                    const tasks = await response.json();
-                    
-                    // Sort tasks by creation date (newest first)
-                    const sortedTasks = Object.entries(tasks).sort((a, b) => {
-                        const timeA = a[1].created_at || 0;
-                        const timeB = b[1].created_at || 0;
-                        return timeB - timeA; // Newest first
-                    });
-                    
-                    for (const [clientId, task] of sortedTasks) {
-                        this.createTaskCard(clientId, task);
-                        this.tasks.set(clientId, task);
-                    }
-                } catch (error) {
-                    this.showNotification('Failed to load existing tasks', 'error');
-                }
-            }
-
-            startPeriodicUpdates() {
-                setInterval(() => {
-                    this.updateAllActiveTasks();
-                }, 2000); // Update every 2 seconds
-            }
-
-            async updateAllActiveTasks() {
-                for (const [clientId, task] of this.tasks.entries()) {
-                    if (task.status === 'started' || task.status === 'processing' || task.status === 'waiting') {
-                        await this.updateTaskStatus(clientId);
-                    }
-                }
-            }            validateUrl(event) {
-                const url = event.target.value.trim();
-                const submitBtn = document.getElementById('submit-btn');
-                const vodBtn = document.getElementById('vod-download-btn');
-                
-                // If empty URL, enable buttons (no validation needed for empty)
-                if (url.length === 0) {
-                    event.target.classList.remove('invalid');
-                    submitBtn.disabled = false;
-                    vodBtn.disabled = false;
-                    return;
-                }
-                
-                // Very permissive validation - just check if it looks like a URL
-                const isValidUrl = url.includes('.') && (url.startsWith('http') || !url.includes(' '));
-                
-                if (!isValidUrl) {
-                    event.target.classList.add('invalid');
-                    submitBtn.disabled = true;
-                    vodBtn.disabled = true;
-                } else {
-                    event.target.classList.remove('invalid');
-                    submitBtn.disabled = false;
-                    vodBtn.disabled = false;
-                }
-            }
-
-            async handleDownload(event, type) {
-                event.preventDefault();
-                
-                const url = document.getElementById('video-url').value.trim();
-                const date = document.getElementById('download-date').value.trim();
-                const delayEnabled = document.getElementById('delay-enabled').checked;
-                const delayMinutes = delayEnabled ? parseInt(document.getElementById('delay-minutes').value) || 240 : 0;
-                
-                if (!url) {
-                    this.showNotification('Please enter a URL', 'error');
-                    return;
-                }
-
-                const clientId = this.generateClientId();
-                const endpoint = type === 'vod' ? '/start_vod_download' : '/start_download';
-                const payload = { 
-                    url, 
-                    client_id: clientId,
-                    delay_minutes: delayMinutes
-                };
-                
-                if (type === 'vod') {
-                    payload.date = date;
-                }
-
-                try {
-                    this.showLoading(true);
-                    const response = await fetch(endpoint, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(payload)
-                    });
-
-                    const result = await response.json();
-                    
-                    if (response.ok) {
-                        this.createTaskCard(clientId, {
-                            status: result.status,
-                            output: [result.message],
-                            title: delayMinutes > 0 ? 'Waiting...' : 'Starting download...',
-                            type: type,
-                            url: url,
-                            date: date,
-                            delay_minutes: delayMinutes,
-                            start_time: Date.now() / 1000 + (delayMinutes * 60)
-                        });
-                        
-                        this.tasks.set(clientId, result);
-                        document.getElementById('video-url').value = '';
-                        this.showNotification(delayMinutes > 0 ? `Download scheduled in ${delayMinutes} minutes` : 'Download started successfully', 'success');
-                        this.startTaskTracking(clientId);
-                    } else {
-                        this.showNotification(result.error || 'Failed to start download', 'error');
-                    }
-                } catch (error) {
-                    this.showNotification('Network error: Failed to start download', 'error');
-                } finally {
-                    this.showLoading(false);
-                }
-            }
-
-            async startTaskTracking(clientId) {
-                const updateTask = async () => {
-                    const task = await this.updateTaskStatus(clientId);
-                    if (task && (task.status === 'started' || task.status === 'processing')) {
-                        setTimeout(updateTask, 1000);
-                    }
-                };
-                updateTask();
-            }
-
-            async updateTaskStatus(clientId) {
-                try {
-                    const response = await fetch(`/status/${clientId}`);
-                    if (response.ok) {
-                        const task = await response.json();
-                        this.updateTaskCard(clientId, task);
-                        this.tasks.set(clientId, task);
-                        return task;
-                    } else {
-                        console.warn(`Task ${clientId} not found`);
-                        return null;
-                    }
-                } catch (error) {
-                    console.error(`Failed to update task ${clientId}:`, error);
-                    return null;
-                }
-            }
-
-            createTaskCard(clientId, task) {
-                const container = document.getElementById('output-container');
-                
-                const card = document.createElement('div');
-                card.className = 'task-card';
-                card.id = `task-${clientId}`;
-                  card.innerHTML = `
-                    <div class="task-header">
-                        <h3 class="task-title" id="title-${clientId}">${task.title || 'Loading...'}</h3>
-                        <div class="task-meta">
-                            <span class="task-type">${task.type || 'regular'}</span>
-                            ${task.is_live_stream ? '<span class="live-indicator">🔴 LIVE</span>' : ''}
-                            <span class="task-status" id="status-${clientId}">${task.status}</span>
-                        </div>
-                    </div>
-                    ${task.status === 'waiting' ? `<div class="timer-display" id="timer-${clientId}">Starting in: calculating...</div>` : ''}
-                    ${task.progress ? `<div class="progress-bar"><div class="progress-fill" style="width: ${task.progress}%"></div></div>` : ''}
-                    <div class="task-url">${this.truncateUrl(task.url)}</div>
-                    ${task.is_live_stream ? '<div class="live-warning">⚠️ Live stream detected - connection issues are normal and handled automatically</div>' : ''}
-                    <div class="task-output" id="output-${clientId}"></div>                    <div class="task-actions" id="actions-${clientId}">
-                        <button class="btn-secondary btn-sm" onclick="downloadManager.toggleOutput('${clientId}')">Toggle Output</button>
-                        <button class="btn-danger btn-sm" id="cancel-${clientId}" onclick="downloadManager.cancelTask('${clientId}')" 
-                                ${this.isTaskFinished(task.status) ? 'disabled' : ''}>Cancel</button>
-                        <button class="btn-danger btn-sm" onclick="downloadManager.removeTask('${clientId}')">Remove</button>
-                    </div>
-                `;
-                
-                // Insert new tasks at the top (prepend instead of append)
-                container.insertBefore(card, container.firstChild);
-                this.updateTaskCard(clientId, task);
-            }            updateTaskCard(clientId, task) {
-                const titleElement = document.getElementById(`title-${clientId}`);
-                const statusElement = document.getElementById(`status-${clientId}`);
-                const outputElement = document.getElementById(`output-${clientId}`);
-                const cancelButton = document.getElementById(`cancel-${clientId}`);
-                const card = document.getElementById(`task-${clientId}`);
-                const timerElement = document.getElementById(`timer-${clientId}`);
-                
-                if (titleElement && task.title) {
-                    titleElement.textContent = task.title;
-                }
-                
-                if (statusElement) {
-                    statusElement.textContent = task.status;
-                    statusElement.className = `task-status status-${task.status.split(':')[0]}`;
-                }
-                
-                // Update timer display
-                if (task.status === 'waiting' && task.start_time) {
-                    const now = Date.now() / 1000;
-                    const remaining = Math.max(0, task.start_time - now);
-                    
-                    if (remaining > 0) {
-                        const hours = Math.floor(remaining / 3600);
-                        const minutes = Math.floor((remaining % 3600) / 60);
-                        const seconds = Math.floor(remaining % 60);
-                        
-                        const timeStr = hours > 0 
-                            ? `${hours}h ${minutes}m ${seconds}s`
-                            : minutes > 0
-                                ? `${minutes}m ${seconds}s`
-                                : `${seconds}s`;
-                        
-                        if (timerElement) {
-                            timerElement.textContent = `Starting in: ${timeStr}`;
-                        } else {
-                            // Add timer element if it doesn't exist
-                            const headerElement = card.querySelector('.task-header');
-                            if (headerElement) {
-                                const timerDiv = document.createElement('div');
-                                timerDiv.className = 'timer-display';
-                                timerDiv.id = `timer-${clientId}`;
-                                timerDiv.textContent = `Starting in: ${timeStr}`;
-                                headerElement.after(timerDiv);
-                            }
-                        }
-                    }
-                } else if (timerElement && task.status !== 'waiting') {
-                    // Remove timer when no longer waiting
-                    timerElement.remove();
-                }
-                
-                // Update cancel button state
-                if (cancelButton) {
-                    cancelButton.disabled = this.isTaskFinished(task.status);
-                }
-                
-                if (outputElement && task.output) {
-                    outputElement.textContent = task.output.slice(-10).join('\n'); // Show last 10 lines
-                    outputElement.scrollTop = outputElement.scrollHeight;
-                }
-                
-                if (card) {
-                    card.className = `task-card status-${task.status.split(':')[0]}`;
-                    
-                    // Update progress bar
-                    let progressBar = card.querySelector('.progress-bar');
-                    if (task.progress) {
-                        if (!progressBar) {
-                            progressBar = document.createElement('div');
-                            progressBar.className = 'progress-bar';
-                            progressBar.innerHTML = '<div class="progress-fill"></div>';
-                            card.querySelector('.task-header').after(progressBar);
-                        }
-                        const fill = progressBar.querySelector('.progress-fill');
-                        fill.style.width = `${task.progress}%`;
-                    }
-                }
-            }
-
-            isTaskFinished(status) {
-                return status === 'finished' || status.startsWith('error') || status === 'cancelled';
-            }            toggleOutput(clientId) {
-                const outputElement = document.getElementById(`output-${clientId}`);
-                const task = this.tasks.get(clientId);
-                
-                if (outputElement.style.display === 'none') {
-                    outputElement.style.display = 'block';
-                    outputElement.textContent = task.output ? task.output.join('\n') : '';
-                    // Scroll to bottom when toggling output
-                    outputElement.scrollTop = outputElement.scrollHeight;
-                } else {
-                    outputElement.style.display = 'none';
-                }
-            }
-
-            async removeTask(clientId) {
-                try {
-                    // Call the remove endpoint which will also cancel if active
-                    const response = await fetch(`/remove_task/${clientId}`, { method: 'POST' });
-                    
-                    if (response.ok) {
-                        const card = document.getElementById(`task-${clientId}`);
-                        if (card) {
-                            card.remove();
-                        }
-                        this.tasks.delete(clientId);
-                        this.showNotification('Task removed', 'info');
-                    } else {
-                        this.showNotification('Failed to remove task', 'error');
-                    }
-                } catch (error) {
-                    this.showNotification('Failed to remove task', 'error');
-                }
-            }
-
-            async cancelTask(clientId) {
-                try {
-                    const response = await fetch(`/cancel_download/${clientId}`, { method: 'POST' });
-                    if (response.ok) {
-                        this.showNotification('Download cancelled', 'info');
-                        await this.updateTaskStatus(clientId);
-                    }
-                } catch (error) {
-                    this.showNotification('Failed to cancel download', 'error');
-                }
-            }
-
-            async clearAllTasks() {
-                if (!confirm('Are you sure you want to clear all tasks?')) return;
-                
-                try {
-                    const response = await fetch('/clear_tasks', { method: 'POST' });
-                    const result = await response.json();
-                    
-                    if (response.ok) {
-                        document.getElementById('output-container').innerHTML = '';
-                        this.tasks.clear();
-                        this.showNotification('All tasks cleared successfully', 'success');
-                    } else {
-                        this.showNotification('Failed to clear tasks', 'error');
-                    }
-                } catch (error) {
-                    this.showNotification('Network error: Failed to clear tasks', 'error');
-                }
-            }
-
-            generateClientId() {
-                return 'client_' + Math.random().toString(36).substr(2, 16) + Date.now().toString(36);
-            }
-
-            truncateUrl(url, maxLength = 50) {
-                return url.length > maxLength ? url.substring(0, maxLength) + '...' : url;
-            }
-
-            showNotification(message, type = 'info') {
-                const notification = document.createElement('div');
-                notification.className = `notification notification-${type}`;
-                notification.textContent = message;
-                
-                document.body.appendChild(notification);
-                
-                // Animate in
-                requestAnimationFrame(() => {
-                    notification.classList.add('show');
-                });
-                
-                // Remove after 5 seconds
-                setTimeout(() => {
-                    notification.classList.remove('show');
-                    setTimeout(() => notification.remove(), 300);
-                }, 5000);
-            }
-
-            showLoading(show) {
-                const submitBtn = document.getElementById('submit-btn');
-                const vodBtn = document.getElementById('vod-download-btn');
-                
-                if (show) {
-                    submitBtn.disabled = true;
-                    vodBtn.disabled = true;
-                    submitBtn.textContent = 'Starting...';
-                } else {
-                    submitBtn.disabled = false;
-                    vodBtn.disabled = false;
-                    submitBtn.textContent = 'Download';
-                }
-            }
-        }
-
-        // Initialize when DOM is loaded
-        let downloadManager;
-        document.addEventListener('DOMContentLoaded', () => {
-            downloadManager = new DownloadManager();
-        });
-    </script>
 </head>
+
 <body>
-    <div class="container">        <header class="app-header">
-            <h1>YT-DLP Web Downloader</h1>
+    <div class="glass-bg"></div>
+
+    <main class="container">
+        <header class="glass-panel header">
+            <h1 class="logo">Web Video <span>Downloader</span></h1>
+            <div style="display:flex; align-items:center;">
+                <button id="theme-btn" class="icon-btn" style="margin-right:0.5rem;" title="Toggle Light/Dark Mode">
+                    <svg id="theme-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                        stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="5"></circle>
+                        <line x1="12" y1="1" x2="12" y2="3"></line>
+                        <line x1="12" y1="21" x2="12" y2="23"></line>
+                        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+                        <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+                        <line x1="1" y1="12" x2="3" y2="12"></line>
+                        <line x1="21" y1="12" x2="23" y2="12"></line>
+                        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+                        <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+                    </svg>
+                </button>
+                <button id="hamburger-btn" class="icon-btn">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <line x1="3" y1="12" x2="21" y2="12"></line>
+                        <line x1="3" y1="6" x2="21" y2="6"></line>
+                        <line x1="3" y1="18" x2="21" y2="18"></line>
+                    </svg>
+                </button>
+            </div>
         </header>
 
-        <main class="main-content">
-            <form id="download-form" class="download-form">
-                <div class="form-group">
-                    <label for="video-url">Video URL</label>
-                    <input 
-                        type="url" 
-                        id="video-url" 
-                        name="video-url" 
-                        placeholder="https://youtube.com/watch?v=..." 
-                        required
-                        autocomplete="url"
-                    >
+        <section class="glass-panel input-section">
+            <input type="text" id="url-input" placeholder="Paste link here (YouTube, Twitch, VOD, etc...)"
+                autocomplete="off">
+            <div class="options-row">
+                <label class="toggle-row">
+                    <span class="toggle-switch">
+                        <input type="checkbox" id="delay-cb">
+                        <span class="toggle-slider"></span>
+                    </span>
+                    Delay download by
+                </label>
+                <div class="spinner-group">
+                    <button type="button" class="spinner-btn" id="delay-minus">−</button>
+                    <input type="number" id="delay-mins" value="180" min="1" max="10000" disabled>
+                    <button type="button" class="spinner-btn" id="delay-plus">+</button>
                 </div>
-                
-                <div class="form-group">
-                    <label for="download-date">Date (for VOD downloads)</label>
-                    <input 
-                        type="date" 
-                        id="download-date" 
-                        name="download-date"
-                    >
+                <span style="margin-right: 15px;">min</span>
+                <div style="margin-left: auto; display: flex; align-items: center;">
+                    <label for="vod-date" style="margin-right: 10px;">VOD Date:</label>
+                    <input type="date" id="vod-date" class="date-picker">
                 </div>
-                
-                <div class="form-actions">
-                    <div class="form-actions-left">
-                        <button type="submit" id="submit-btn" class="btn btn-primary">
-                            Download
-                        </button>
-                        <button type="button" id="vod-download-btn" class="btn btn-vod">
-                            VOD Download
-                        </button>
-                        <button type="button" id="clear-btn" class="btn btn-danger">
-                            Clear All
-                        </button>
-                    </div>
-                    
-                    <div class="delay-group">
-                        <label class="checkbox-label">
-                            <input type="checkbox" id="delay-enabled" name="delay-enabled">
-                            <span>Delay start</span>
-                        </label>
-                        <div class="delay-input-group">
-                            <input 
-                                type="number" 
-                                id="delay-minutes" 
-                                name="delay-minutes"
-                                placeholder="240"
-                                value="240"
-                                min="1"
-                                max="10080"
-                            >
-                            <span class="input-suffix">min</span>
-                        </div>
-                    </div>
-                </div>
-            </form>
+            </div>
+            <div class="actions-row">
+                <button class="btn btn-default" id="btn-default">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                        <polyline points="7 10 12 15 17 10"></polyline>
+                        <line x1="12" y1="15" x2="12" y2="3"></line>
+                    </svg>
+                    Regular Download
+                </button>
+                <button class="btn btn-vod" id="btn-vod">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                        <polyline points="7 10 12 15 17 10"></polyline>
+                        <line x1="12" y1="15" x2="12" y2="3"></line>
+                    </svg>
+                    VOD Download
+                </button>
+            </div>
+        </section>
 
-            <section class="tasks-section">
-                <h2>Active Downloads</h2>
-                <div id="output-container" class="tasks-container"></div>
-            </section>
-        </main>
+        <section class="glass-panel list-section">
+            <div class="list-header">
+                <h2>Downloads</h2>
+                <div class="list-controls">
+                    <button id="btn-stop-all" class="btn-small btn-danger">Stop All</button>
+                    <button id="btn-clear-finished" class="btn-small">Clear Finished</button>
+                </div>
+            </div>
+            <div id="tasks-container" class="tasks-container">
+                <!-- Tasks injected here via JS -->
+            </div>
+        </section>
+    </main>
+
+    <!-- Settings Modal -->
+    <div id="settings-modal" class="modal">
+        <div class="glass-panel modal-content">
+            <div class="modal-header">
+                <h2>Settings</h2>
+                <button id="close-modal" class="icon-btn">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Default Save Path (Regular)</label>
+                    <input type="text" id="setting-default-path">
+                </div>
+                <div class="form-group">
+                    <label>VOD Save Path (Purple)</label>
+                    <input type="text" id="setting-vod-path">
+                </div>
+                <div class="form-group">
+                    <label>Admin Password</label>
+                    <input type="password" id="setting-password" placeholder="Required to save changes">
+                </div>
+                <button id="btn-save-paths" class="btn btn-default" style="width: 100%; padding: 0.7rem; font-size: 1rem; margin-bottom: 0.5rem;">Save Paths</button>
+                <hr style="border-color: var(--glass-border); margin: 1rem 0;">
+                <label class="toggle-row">
+                    <span class="toggle-switch">
+                        <input type="checkbox" id="setting-clear-all">
+                        <span class="toggle-slider"></span>
+                    </span>
+                    "Clear Finished" also removes cancelled &amp; errored jobs.
+                </label>
+            </div>
+            <div class="modal-footer">
+                <button id="btn-save-preferences" class="btn btn-vod">Save Preferences</button>
+            </div>
+        </div>
     </div>
+
+    <script src="/static/app.js"></script>
 </body>
+
 </html>
