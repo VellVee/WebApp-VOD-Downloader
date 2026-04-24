@@ -22,7 +22,8 @@ TASKS_FILE = os.path.join(BASE_DIR, 'tasks.json')
 DEFAULT_SETTINGS = {
     "default_path": "C:\\Downloads\\YT-DLP_Default" if os.name == 'nt' else os.path.expanduser("~/Downloads/YT-DLP_Default"),
     "vod_path": "C:\\Downloads\\YT-DLP_VODs" if os.name == 'nt' else os.path.expanduser("~/Downloads/YT-DLP_VODs"),
-    "admin_password": "admin"
+    "admin_password": "admin",
+    "port": 5557
 }
 
 task_status = {}
@@ -324,18 +325,49 @@ def api_save_settings():
     if provided_password != current_settings.get('admin_password', 'admin'):
         return jsonify({"error": "Unauthorized. Invalid password."}), 401
     
-    # We only update the paths, preserve the password
+    new_password = new_settings.get('new_password', '').strip()
+    admin_password = current_settings.get("admin_password", "admin")
+    if new_password:
+        admin_password = new_password
+        
+    # We only update the paths and port, preserve the password
     updated_settings = {
         "default_path": new_settings.get("default_path", current_settings.get("default_path")),
         "vod_path": new_settings.get("vod_path", current_settings.get("vod_path")),
-        "admin_password": current_settings.get("admin_password", "admin")
+        "port": int(new_settings.get("port", current_settings.get("port", 5557))),
+        "admin_password": admin_password
     }
     
     if save_settings(updated_settings):
         return jsonify({"success": True})
     return jsonify({"error": "Failed to save settings"}), 500
 
+@app.route('/api/restart', methods=['POST'])
+def api_restart():
+    data = request.json or {}
+    provided_password = data.get('password', '')
+    current_settings = load_settings()
+    
+    if provided_password != current_settings.get('admin_password', 'admin'):
+        return jsonify({"error": "Unauthorized. Invalid password."}), 401
+        
+    def restart_server():
+        time.sleep(1)
+        os.execv(sys.executable, [sys.executable, os.path.join(BASE_DIR, 'app.py')])
+        
+    t = threading.Thread(target=restart_server)
+    t.start()
+    return jsonify({"success": True})
+
 if __name__ == '__main__':
     load_tasks()
-    port = int(os.environ.get('PORT', 5000))
-    app.run(host='0.0.0.0', port=port, debug=False)
+    settings = load_settings()
+    port = int(settings.get('port', 5557))
+    
+    try:
+        from waitress import serve
+        logger.info(f"Starting production server on http://0.0.0.0:{port} using Waitress")
+        serve(app, host='0.0.0.0', port=port, threads=6)
+    except ImportError:
+        logger.info(f"Waitress not found, falling back to Flask dev server on http://0.0.0.0:{port}")
+        app.run(host='0.0.0.0', port=port, debug=False)

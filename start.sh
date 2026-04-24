@@ -5,6 +5,13 @@ echo "YT-DLP Web Downloader - Startup (Linux)"
 echo "========================================"
 echo ""
 
+# Check for updates
+if [ -d ".git" ] && command -v git &> /dev/null; then
+    echo "[CHECK] Checking for updates from GitHub..."
+    git pull
+    echo ""
+fi
+
 # Check if python3 is installed
 if ! command -v python3 &> /dev/null; then
     echo "[ERROR] Python3 is not installed. Please install it."
@@ -35,4 +42,4 @@ echo "Press Ctrl+C to stop the server"
 echo "========================================"
 echo ""
 
-python3 -c "from waitress import serve; from app import app; serve(app, host='0.0.0.0', port=5000, threads=6)"
+python3 app.py

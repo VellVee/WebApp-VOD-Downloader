@@ -16,12 +16,13 @@ Web interface for yt-dlp with real-time download tracking.
 ### Prerequisites
 - Python 3.8+
 - [FFmpeg](https://ffmpeg.org/download.html)
+- [Git](https://git-scm.com/downloads) (For automatic updates on startup)
 
 ### Setup (Windows)
 Double click `start.bat`. This script will:
 1. Validate your Python installation.
 2. Ensure `pip` and other requirements are up to date.
-3. Start the production `waitress` server on `localhost:5000`.
+3. Start the production `waitress` server on `localhost:5557`.
 
 ### Setup (Linux)
 Execute the `start.sh` script:
@@ -32,7 +33,7 @@ chmod +x start.sh
 This script acts similarly, automatically checking and building a python `venv`, upgrading `yt-dlp`, and launching `waitress`.
 
 ## Usage
-Once the server is running, navigate to `http://localhost:5000` or the hosted machine's IP address on your LAN.
+Once the server is running, navigate to `http://localhost:5557` or the hosted machine's IP address on your LAN.
 
 1. Click the top right menu icon to set your LAN `Default Save Path` and `VOD Save Path`. By default, the admin password is `admin` (adjustable in `settings.json` - created on first run).
 2. Paste link into the input field.

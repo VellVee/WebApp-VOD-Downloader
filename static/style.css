@@ -471,6 +471,17 @@ body {
     margin-bottom: 1.5rem;
 }
 
+.section-title {
+    font-size: 0.95rem;
+    font-weight: 700;
+    margin-bottom: 1rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    border-bottom: 1px solid var(--glass-border);
+    padding-bottom: 0.5rem;
+}
+
 .form-group {
     margin-bottom: 1.5rem;
 }

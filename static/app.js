@@ -18,9 +18,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const btnSavePreferences = document.getElementById('btn-save-preferences');
     const inputDefaultPath = document.getElementById('setting-default-path');
     const inputVodPath = document.getElementById('setting-vod-path');
+    const inputPort = document.getElementById('setting-port');
     const inputPassword = document.getElementById('setting-password');
     const btnTheme = document.getElementById('theme-btn');
     const settingClearAll = document.getElementById('setting-clear-all');
+    const btnRestart = document.getElementById('btn-restart-server');
 
     // Theme initialization
     if(localStorage.getItem('theme') === 'light') {
@@ -86,16 +88,21 @@ document.addEventListener('DOMContentLoaded', () => {
             const data = await res.json();
             inputDefaultPath.value = data.default_path || '';
             inputVodPath.value = data.vod_path || '';
+            inputPort.value = data.port || 5557;
         } catch (e) {
             console.error(e);
         }
     }
 
+    const inputNewPassword = document.getElementById('setting-new-password');
+
     btnSavePaths.addEventListener('click', async () => {
         const payload = {
             default_path: inputDefaultPath.value,
             vod_path: inputVodPath.value,
-            password: inputPassword.value
+            port: parseInt(inputPort.value) || 5557,
+            password: inputPassword.value,
+            new_password: inputNewPassword.value
         };
         try {
             const res = await fetch('/api/settings', {
@@ -107,8 +114,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 alert('Invalid Admin Password!');
                 return;
             }
-            alert('Paths saved successfully!');
+            alert('Settings saved successfully!');
             inputPassword.value = ''; // clear password field
+            inputNewPassword.value = ''; 
         } catch (e) {
             console.error(e);
         }
@@ -116,6 +124,31 @@ document.addEventListener('DOMContentLoaded', () => {
 
     btnSavePreferences.addEventListener('click', () => {
         modal.classList.remove('active');
+    });
+
+    btnRestart.addEventListener('click', async () => {
+        const password = prompt("Enter Admin Password to restart server:");
+        if (password === null) return;
+        
+        try {
+            const res = await fetch('/api/restart', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ password })
+            });
+            if (res.status === 401) {
+                alert('Invalid Admin Password!');
+                return;
+            }
+            alert('Server is restarting... Page will redirect to the new port in 3 seconds.');
+            setTimeout(() => {
+                const port = parseInt(inputPort.value) || 5557;
+                window.location.href = window.location.protocol + '//' + window.location.hostname + ':' + port + '/';
+            }, 3000);
+        } catch (e) {
+            console.error(e);
+            alert('Failed to contact server. It may have already restarted.');
+        }
     });
 
     async function startDownload(profile) {

@@ -105,30 +105,44 @@
                 <button id="close-modal" class="icon-btn">&times;</button>
             </div>
             <div class="modal-body">
-                <div class="form-group">
+                
+                <h3 class="section-title">Backend Configuration</h3>
+                <div class="form-group" style="margin-bottom: 1rem;">
                     <label>Default Save Path (Regular)</label>
                     <input type="text" id="setting-default-path">
                 </div>
-                <div class="form-group">
+                <div class="form-group" style="margin-bottom: 1rem;">
                     <label>VOD Save Path (Purple)</label>
                     <input type="text" id="setting-vod-path">
                 </div>
-                <div class="form-group">
-                    <label>Admin Password</label>
+                <div class="form-group" style="margin-bottom: 1.5rem;">
+                    <label>Server Port <span style="font-size:0.8rem; opacity:0.7;">(Requires restart)</span></label>
+                    <input type="number" id="setting-port" placeholder="5557">
+                </div>
+
+                <h3 class="section-title">Security &amp; Save</h3>
+                <div class="form-group" style="margin-bottom: 1rem;">
+                    <label>New Admin Password <span style="font-size:0.8rem; opacity:0.7;">(Leave blank to keep)</span></label>
+                    <input type="password" id="setting-new-password" placeholder="New Password">
+                </div>
+                <div class="form-group" style="margin-bottom: 0.5rem;">
+                    <label>Current Admin Password</label>
                     <input type="password" id="setting-password" placeholder="Required to save changes">
                 </div>
-                <button id="btn-save-paths" class="btn btn-default" style="width: 100%; padding: 0.7rem; font-size: 1rem; margin-bottom: 0.5rem;">Save Paths</button>
-                <hr style="border-color: var(--glass-border); margin: 1rem 0;">
+                <button id="btn-save-paths" class="btn btn-default" style="width: 100%; padding: 0.7rem; font-size: 1rem; margin-bottom: 1.5rem;">Save Backend Settings</button>
+                
+                <h3 class="section-title">Client Preferences</h3>
                 <label class="toggle-row">
                     <span class="toggle-switch">
                         <input type="checkbox" id="setting-clear-all">
                         <span class="toggle-slider"></span>
                     </span>
-                    "Clear Finished" also removes cancelled &amp; errored jobs.
+                    "Clear Finished" removes cancelled &amp; errored jobs.
                 </label>
             </div>
-            <div class="modal-footer">
-                <button id="btn-save-preferences" class="btn btn-vod">Save Preferences</button>
+            <div class="modal-footer" style="justify-content: space-between;">
+                <button id="btn-restart-server" class="btn btn-danger" style="flex: 0 0 auto; padding: 0.6rem 1rem; font-size: 0.9rem;">Restart Server</button>
+                <button id="btn-save-preferences" class="btn btn-vod" style="flex: 0 0 auto; padding: 0.6rem 1rem; font-size: 0.9rem;">Save Preferences</button>
             </div>
         </div>
     </div>

@@ -7,6 +7,16 @@ echo YT-DLP Web Downloader - Startup
 echo ========================================
 echo.
 
+:: Check for updates
+if exist ".git" (
+    where git >nul 2>&1
+    if %errorlevel% equ 0 (
+        echo [CHECK] Checking for updates from GitHub...
+        git pull
+        echo.
+    )
+)
+
 :: Check Python
 where python >nul 2>&1
 if %errorlevel% neq 0 (
@@ -30,5 +40,5 @@ echo Press Ctrl+C to stop the server
 echo ========================================
 echo.
 
-python -c "from waitress import serve; from app import app; serve(app, host='0.0.0.0', port=5000, threads=6)"
+python app.py
 pause
