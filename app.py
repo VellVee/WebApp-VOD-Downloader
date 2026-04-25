@@ -92,9 +92,9 @@ class YTDLPRunner:
 
         date_prefix = self.date_str if self.date_str else datetime.now().strftime("%Y-%m-%d")
         if self.profile == 'vod':
-            output_template = f"{date_prefix} %(title).150s/{date_prefix} %(title).150s.%(ext)s"
+            output_template = f"{date_prefix} %(title,id).200B/{date_prefix} %(title,id).200B.%(ext)s"
         else:
-            output_template = "%(title).150s/%(title).150s.%(ext)s"
+            output_template = "%(title,id).200B/%(title,id).200B.%(ext)s"
 
         cmd = [
             sys.executable, '-m', 'yt_dlp',
@@ -105,7 +105,6 @@ class YTDLPRunner:
             '--merge-output-format', 'mp4',
             '--remux-video', 'mp4',
             '--windows-filenames',
-            '--trim-filenames', '150',
             '-O', 'YT-DLP-TITLE:%(title)s',
             '--no-simulate',
             '-o', os.path.join(base_path, output_template).replace('\\', '/'),
