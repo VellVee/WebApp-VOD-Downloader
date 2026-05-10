@@ -100,7 +100,8 @@ class YTDLPRunner:
             '-f', 'bv*+ba/b',
             '--windows-filenames',
             '-O', 'YT-DLP-TITLE:%(title)s',
-            '--no-simulate'
+            '--no-simulate',
+            '--write-thumbnail'
         ]
 
         if self.profile == 'vod':
@@ -114,6 +115,10 @@ class YTDLPRunner:
         else:
             output_template = "%(title,id).200B/%(title,id).200B.%(ext)s"
             cmd.extend([
+                '--write-subs',
+                '--write-auto-subs',
+                '--sub-langs', 'en.*',
+                '--write-link',
                 '--merge-output-format', 'mp4',
                 '--remux-video', 'mp4',
                 '-o', os.path.join(base_path, output_template).replace('\\', '/')
