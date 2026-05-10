@@ -91,26 +91,38 @@ class YTDLPRunner:
                 logger.error(f"Failed to create path {base_path}: {e}")
 
         date_prefix = self.date_str if self.date_str else datetime.now().strftime("%Y-%m-%d")
-        if self.profile == 'vod':
-            output_template = f"{date_prefix} %(title,id).200B/{date_prefix} %(title,id).200B.%(ext)s"
-        else:
-            output_template = "%(title,id).200B/%(title,id).200B.%(ext)s"
-
+        
         cmd = [
             sys.executable, '-m', 'yt_dlp',
             '--newline',
             '--progress',
             '--hls-prefer-native',
             '-f', 'bv*+ba/b',
-            '--merge-output-format', 'mp4',
-            '--remux-video', 'mp4',
             '--windows-filenames',
             '-O', 'YT-DLP-TITLE:%(title)s',
-            '--no-simulate',
-            '-o', os.path.join(base_path, output_template).replace('\\', '/'),
+            '--no-simulate'
+        ]
+
+        if self.profile == 'vod':
+            output_template = f"{date_prefix} %(title,id).200B/{date_prefix} %(title,id).200B.%(ext)s"
+            cmd.extend([
+                '--merge-output-format', 'mov',
+                '--remux-video', 'mov',
+                '--postprocessor-args', 'ffmpeg:-c:a pcm_s16le',
+                '-o', os.path.join(base_path, output_template).replace('\\', '/')
+            ])
+        else:
+            output_template = "%(title,id).200B/%(title,id).200B.%(ext)s"
+            cmd.extend([
+                '--merge-output-format', 'mp4',
+                '--remux-video', 'mp4',
+                '-o', os.path.join(base_path, output_template).replace('\\', '/')
+            ])
+
+        cmd.extend([
             '--',
             self.url
-        ]
+        ])
         return cmd
 
     def run(self):
