@@ -57,7 +57,10 @@
                     <input type="number" id="delay-mins" value="180" min="1" max="10000" disabled>
                     <button type="button" class="spinner-btn" id="delay-plus">+</button>
                 </div>
-                <span style="margin-right: 15px;">min</span>
+                <select id="delay-unit" class="unit-select" disabled>
+                    <option value="min">min</option>
+                    <option value="hr">hr</option>
+                </select>
                 <div style="margin-left: auto; display: flex; align-items: center;">
                     <label for="vod-date" style="margin-right: 10px;">VOD Date:</label>
                     <input type="date" id="vod-date" class="date-picker">

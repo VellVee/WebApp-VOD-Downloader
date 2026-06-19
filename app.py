@@ -8,6 +8,7 @@ import subprocess
 import threading
 import logging
 from datetime import datetime
+# pyrefly: ignore [missing-import]
 from flask import Flask, render_template, request, jsonify
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -101,7 +102,6 @@ class YTDLPRunner:
             '--windows-filenames',
             '-O', 'YT-DLP-TITLE:%(title)s',
             '--no-simulate',
-            '--write-thumbnail'
         ]
 
         if self.profile == 'vod':
@@ -116,6 +116,7 @@ class YTDLPRunner:
             output_template = "%(title,id).200B/%(title,id).200B.%(ext)s"
             cmd.extend([
                 '--write-subs',
+                '--write-thumbnail',
                 '--write-auto-subs',
                 '--sub-langs', 'en.*',
                 '--write-link',

@@ -221,6 +221,38 @@ body {
     min-height: 42px;
 }
 
+.unit-select {
+    padding: 0.6rem 2rem 0.6rem 0.75rem;
+    font-size: 1rem;
+    background: rgba(10, 10, 15, 0.6);
+    border: 1px solid var(--glass-border);
+    color: var(--text-main);
+    border-radius: 6px;
+    outline: none;
+    font-family: inherit;
+    min-height: 42px;
+    cursor: pointer;
+    appearance: none;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%238e92a4' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'></polyline></svg>");
+    background-repeat: no-repeat;
+    background-position: right 8px center;
+    background-size: 16px;
+    margin-right: 15px;
+    transition: border-color 0.3s ease, box-shadow 0.3s ease;
+}
+
+.unit-select:focus {
+    border-color: var(--orange-primary);
+    box-shadow: 0 0 0 2px rgba(255, 94, 0, 0.2);
+}
+
+.unit-select:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
 .date-picker::-webkit-calendar-picker-indicator {
     filter: invert(1);
     opacity: 0.7;
@@ -593,10 +625,15 @@ body.light-mode {
 body.light-mode #url-input,
 body.light-mode #delay-mins,
 body.light-mode .date-picker,
+body.light-mode .unit-select,
 body.light-mode .form-group input:not([type="checkbox"]) {
     background: rgba(255, 255, 255, 0.8);
     color: #000;
     border-color: rgba(0, 0, 0, 0.2);
+}
+
+body.light-mode .unit-select {
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%235a5f73' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'></polyline></svg>");
 }
 
 body.light-mode .task-item {

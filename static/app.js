@@ -3,6 +3,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const urlInput = document.getElementById('url-input');
     const delayCb = document.getElementById('delay-cb');
     const delayMins = document.getElementById('delay-mins');
+    const delayUnit = document.getElementById('delay-unit');
     const vodDate = document.getElementById('vod-date');
     const btnDefault = document.getElementById('btn-default');
     const btnVod = document.getElementById('btn-vod');
@@ -54,18 +55,38 @@ document.addEventListener('DOMContentLoaded', () => {
 
     delayCb.addEventListener('change', () => {
         delayMins.disabled = !delayCb.checked;
+        delayUnit.disabled = !delayCb.checked;
     });
 
     document.getElementById('delay-minus').addEventListener('click', () => {
         if (delayMins.disabled) return;
         const val = parseInt(delayMins.value) || 0;
-        delayMins.value = Math.max(1, val - 10);
+        const step = delayUnit.value === 'hr' ? 1 : 10;
+        delayMins.value = Math.max(1, val - step);
     });
 
     document.getElementById('delay-plus').addEventListener('click', () => {
         if (delayMins.disabled) return;
         const val = parseInt(delayMins.value) || 0;
-        delayMins.value = Math.min(10000, val + 10);
+        const step = delayUnit.value === 'hr' ? 1 : 10;
+        delayMins.value = Math.min(10000, val + step);
+    });
+
+    let lastUnit = delayUnit.value;
+    delayUnit.addEventListener('change', () => {
+        const currentUnit = delayUnit.value;
+        if (currentUnit === lastUnit) return;
+
+        let val = parseInt(delayMins.value) || 0;
+        if (currentUnit === 'hr') {
+            // min to hr
+            val = Math.max(1, Math.round(val / 60));
+        } else {
+            // hr to min
+            val = Math.max(1, val * 60);
+        }
+        delayMins.value = val;
+        lastUnit = currentUnit;
     });
 
     btnHamburger.addEventListener('click', () => {
@@ -157,7 +178,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
         let dMins = 0;
         if (delayCb.checked) {
-            dMins = parseInt(delayMins.value) || 0;
+            const val = parseInt(delayMins.value) || 0;
+            if (delayUnit.value === 'hr') {
+                dMins = val * 60;
+            } else {
+                dMins = val;
+            }
         }
         
         let dateVal = vodDate.value;
@@ -251,9 +277,14 @@ document.addEventListener('DOMContentLoaded', () => {
             } else if (task.status === 'waiting') {
                 if (task.target_start_time) {
                     const remainingSeconds = Math.max(0, Math.floor(task.target_start_time - (Date.now() / 1000)));
-                    const m = Math.floor(remainingSeconds / 60);
+                    const h = Math.floor(remainingSeconds / 3600);
+                    const m = Math.floor((remainingSeconds % 3600) / 60);
                     const s = remainingSeconds % 60;
-                    statusText = `waiting (${m}:${s.toString().padStart(2, '0')})`;
+                    if (h > 0) {
+                        statusText = `waiting (${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')})`;
+                    } else {
+                        statusText = `waiting (${m}:${s.toString().padStart(2, '0')})`;
+                    }
                 }
             }
             
