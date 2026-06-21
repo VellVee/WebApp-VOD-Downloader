@@ -4,6 +4,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const delayCb = document.getElementById('delay-cb');
     const delayMins = document.getElementById('delay-mins');
     const delayUnit = document.getElementById('delay-unit');
+    const waitLiveCb = document.getElementById('wait-live-cb');
     const vodDate = document.getElementById('vod-date');
     const btnDefault = document.getElementById('btn-default');
     const btnVod = document.getElementById('btn-vod');
@@ -186,15 +187,17 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
         
+        const wLive = waitLiveCb.checked;
         let dateVal = vodDate.value;
 
         try {
             await fetch('/api/download', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ url, profile, delay_mins: dMins, date: dateVal })
+                body: JSON.stringify({ url, profile, delay_mins: dMins, date: dateVal, wait_for_live: wLive })
             });
             urlInput.value = '';
+            waitLiveCb.checked = false;
             fetchTasks();
         } catch (e) {
             console.error(e);
@@ -273,7 +276,11 @@ document.addEventListener('DOMContentLoaded', () => {
             if (task.status === 'error (interrupted)') {
                 statusText = 'Interrupted';
             } else if (task.status === 'started') {
-                statusText = 'downloading';
+                if (task.wait_for_live && (task.progress || 0) === 0) {
+                    statusText = 'waiting for live';
+                } else {
+                    statusText = 'downloading';
+                }
             } else if (task.status === 'waiting') {
                 if (task.target_start_time) {
                     const remainingSeconds = Math.max(0, Math.floor(task.target_start_time - (Date.now() / 1000)));

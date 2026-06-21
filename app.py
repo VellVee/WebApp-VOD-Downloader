@@ -72,12 +72,13 @@ def load_tasks():
             task_status = {}
 
 class YTDLPRunner:
-    def __init__(self, client_id, url, profile, delay_mins=0, date_str=None):
+    def __init__(self, client_id, url, profile, delay_mins=0, date_str=None, wait_for_live=False):
         self.client_id = client_id
         self.url = url
-        self.profile = profile # 'default' or 'vod'
+        self.profile = profile
         self.delay_mins = int(delay_mins)
         self.date_str = date_str
+        self.wait_for_live = bool(wait_for_live)
         self.process = None
         self.cancelled = False
 
@@ -125,6 +126,12 @@ class YTDLPRunner:
                 '-o', os.path.join(base_path, output_template).replace('\\', '/')
             ])
 
+        if self.wait_for_live:
+            cmd.extend([
+                '--wait-for-video', '15',
+                '--live-from-start'
+            ])
+
         cmd.extend([
             '--',
             self.url
@@ -143,7 +150,8 @@ class YTDLPRunner:
                 'title': 'Waiting...' if self.delay_mins > 0 else 'Starting...',
                 'log': [],
                 'created_at': time.time(),
-                'target_start_time': target_start_time
+                'target_start_time': target_start_time,
+                'wait_for_live': self.wait_for_live
             }
             active_downloaders[self.client_id] = self
             save_tasks()
@@ -190,11 +198,9 @@ class YTDLPRunner:
                 
                 task_status[self.client_id]['log'].append(line_clean)
                 
-                # Keep log size reasonable
                 if len(task_status[self.client_id]['log']) > 50:
                     task_status[self.client_id]['log'] = task_status[self.client_id]['log'][-50:]
 
-                # Extract title
                 if line_clean.startswith('YT-DLP-TITLE:'):
                     title = line_clean.split('YT-DLP-TITLE:', 1)[1].strip()
                     if self.profile == 'vod' and self.date_str:
@@ -202,7 +208,6 @@ class YTDLPRunner:
                     else:
                         task_status[self.client_id]['title'] = title
                 
-                # Extract progress
                 if '[download]' in line_clean and '%' in line_clean:
                     progress_match = re.search(r'(\d+\.\d+)%', line_clean)
                     if progress_match:
@@ -253,9 +258,10 @@ def index():
 def add_download():
     data = request.json
     url = data.get('url', '').strip()
-    profile = data.get('profile', 'default') # 'default' or 'vod'
+    profile = data.get('profile', 'default')
     delay_mins = int(data.get('delay_mins', 0))
     date_str = data.get('date', '').strip()
+    wait_for_live = bool(data.get('wait_for_live', False))
 
     if not url:
         return jsonify({"error": "URL required"}), 400
@@ -268,7 +274,7 @@ def add_download():
         date_str = re.sub(r'[^a-zA-Z0-9_\-]', '', date_str)
 
     client_id = str(uuid.uuid4())
-    runner = YTDLPRunner(client_id, url, profile, delay_mins, date_str)
+    runner = YTDLPRunner(client_id, url, profile, delay_mins, date_str, wait_for_live)
     t = threading.Thread(target=runner.run, daemon=True)
     t.start()
     return jsonify({"id": client_id})
@@ -327,7 +333,6 @@ def clear_finished():
 @app.route('/api/settings', methods=['GET'])
 def api_get_settings():
     settings = load_settings()
-    # Don't expose the password to the frontend
     if 'admin_password' in settings:
         del settings['admin_password']
     return jsonify(settings)
@@ -337,8 +342,7 @@ def api_save_settings():
     new_settings = request.json
     current_settings = load_settings()
     provided_password = new_settings.get('password', '')
-    
-    # Check if the provided password matches the stored password
+
     if provided_password != current_settings.get('admin_password', 'admin'):
         return jsonify({"error": "Unauthorized. Invalid password."}), 401
     
@@ -347,7 +351,6 @@ def api_save_settings():
     if new_password:
         admin_password = new_password
         
-    # We only update the paths and port, preserve the password
     updated_settings = {
         "default_path": new_settings.get("default_path", current_settings.get("default_path")),
         "vod_path": new_settings.get("vod_path", current_settings.get("vod_path")),
