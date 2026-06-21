@@ -7,6 +7,7 @@ import time
 import subprocess
 import threading
 import logging
+import copy
 from datetime import datetime
 # pyrefly: ignore [missing-import]
 from flask import Flask, render_template, request, jsonify
@@ -52,9 +53,9 @@ def save_settings(settings):
 def save_tasks():
     try:
         with tasks_lock:
-            status_copy = dict(task_status)
-            with open(TASKS_FILE, 'w') as f:
-                json.dump(status_copy, f, indent=4)
+            status_copy = copy.deepcopy(task_status)
+        with open(TASKS_FILE, 'w') as f:
+            json.dump(status_copy, f, indent=4)
     except Exception as e:
         logger.error(f"Error saving tasks: {e}")
 
@@ -63,13 +64,16 @@ def load_tasks():
     if os.path.exists(TASKS_FILE):
         try:
             with open(TASKS_FILE, 'r') as f:
-                task_status = json.load(f)
+                loaded = json.load(f)
             # Reset active statuses on reboot
-            for k, v in task_status.items():
+            for k, v in loaded.items():
                 if v['status'] in ['started', 'waiting']:
                     v['status'] = 'error (interrupted)'
+            with tasks_lock:
+                task_status = loaded
         except Exception:
-            task_status = {}
+            with tasks_lock:
+                task_status = {}
 
 class YTDLPRunner:
     def __init__(self, client_id, url, profile, delay_mins=0, date_str=None, wait_for_live=False):
@@ -99,7 +103,6 @@ class YTDLPRunner:
             '--newline',
             '--progress',
             '--hls-prefer-native',
-            '-f', 'bv*+ba/b',
             '--windows-filenames',
             '-O', 'YT-DLP-TITLE:%(title)s',
             '--no-simulate',
@@ -108,14 +111,25 @@ class YTDLPRunner:
         if self.profile == 'vod':
             output_template = f"{date_prefix} %(title,id).200B/{date_prefix} %(title,id).200B.%(ext)s"
             cmd.extend([
+                '-f', 'bv*+ba/b',
                 '--merge-output-format', 'mov',
                 '--remux-video', 'mov',
                 '--postprocessor-args', 'ffmpeg:-c:a pcm_s16le',
                 '-o', os.path.join(base_path, output_template).replace('\\', '/')
             ])
+        elif self.profile == 'audio':
+            output_template = "%(title,id).200B/%(title,id).200B.%(ext)s"
+            cmd.extend([
+                '-f', 'ba/b',
+                '-x',
+                '--audio-format', 'mp3',
+                '--audio-quality', '0',
+                '-o', os.path.join(base_path, output_template).replace('\\', '/')
+            ])
         else:
             output_template = "%(title,id).200B/%(title,id).200B.%(ext)s"
             cmd.extend([
+                '-f', 'bv*+ba/b',
                 '--write-subs',
                 '--write-thumbnail',
                 '--write-auto-subs',
@@ -141,19 +155,23 @@ class YTDLPRunner:
     def run(self):
         try:
             target_start_time = time.time() + (self.delay_mins * 60)
-            task_status[self.client_id] = {
-                'id': self.client_id,
-                'url': self.url,
-                'profile': self.profile,
-                'status': 'waiting' if self.delay_mins > 0 else 'started',
-                'progress': 0.0,
-                'title': 'Waiting...' if self.delay_mins > 0 else 'Starting...',
-                'log': [],
-                'created_at': time.time(),
-                'target_start_time': target_start_time,
-                'wait_for_live': self.wait_for_live
-            }
-            active_downloaders[self.client_id] = self
+            with tasks_lock:
+                task_status[self.client_id] = {
+                    'id': self.client_id,
+                    'url': self.url,
+                    'profile': self.profile,
+                    'status': 'waiting' if self.delay_mins > 0 else 'started',
+                    'progress': 0.0,
+                    'speed': '',
+                    'eta': '',
+                    'total_size': '',
+                    'title': 'Waiting...' if self.delay_mins > 0 else 'Starting...',
+                    'log': [],
+                    'created_at': time.time(),
+                    'target_start_time': target_start_time,
+                    'wait_for_live': self.wait_for_live
+                }
+                active_downloaders[self.client_id] = self
             save_tasks()
 
             if self.delay_mins > 0:
@@ -161,19 +179,25 @@ class YTDLPRunner:
                 elapsed = 0
                 while elapsed < wait_time:
                     if self.cancelled:
-                        task_status[self.client_id]['status'] = 'cancelled'
-                        task_status[self.client_id]['title'] = 'Cancelled'
+                        with tasks_lock:
+                            if self.client_id in task_status:
+                                task_status[self.client_id]['status'] = 'cancelled'
+                                task_status[self.client_id]['title'] = 'Cancelled'
                         save_tasks()
                         return
                     time.sleep(1)
                     elapsed += 1
                 
-                task_status[self.client_id]['status'] = 'started'
-                task_status[self.client_id]['title'] = 'Starting...'
+                with tasks_lock:
+                    if self.client_id in task_status:
+                        task_status[self.client_id]['status'] = 'started'
+                        task_status[self.client_id]['title'] = 'Starting...'
                 save_tasks()
 
             cmd = self.build_command()
-            task_status[self.client_id]['log'].append("Command: " + " ".join(cmd))
+            with tasks_lock:
+                if self.client_id in task_status:
+                    task_status[self.client_id]['log'].append("Command: " + " ".join(cmd))
             
             # Hide window on Windows
             creationflags = subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
@@ -196,22 +220,31 @@ class YTDLPRunner:
                 if not line_clean:
                     continue
                 
-                task_status[self.client_id]['log'].append(line_clean)
-                
-                if len(task_status[self.client_id]['log']) > 50:
-                    task_status[self.client_id]['log'] = task_status[self.client_id]['log'][-50:]
+                with tasks_lock:
+                    if self.client_id in task_status:
+                        task_status[self.client_id]['log'].append(line_clean)
+                        
+                        if len(task_status[self.client_id]['log']) > 150:
+                            task_status[self.client_id]['log'] = task_status[self.client_id]['log'][-150:]
 
-                if line_clean.startswith('YT-DLP-TITLE:'):
-                    title = line_clean.split('YT-DLP-TITLE:', 1)[1].strip()
-                    if self.profile == 'vod' and self.date_str:
-                        task_status[self.client_id]['title'] = f"{self.date_str} {title}"
-                    else:
-                        task_status[self.client_id]['title'] = title
-                
-                if '[download]' in line_clean and '%' in line_clean:
-                    progress_match = re.search(r'(\d+\.\d+)%', line_clean)
-                    if progress_match:
-                        task_status[self.client_id]['progress'] = float(progress_match.group(1))
+                        if line_clean.startswith('YT-DLP-TITLE:'):
+                            title = line_clean.split('YT-DLP-TITLE:', 1)[1].strip()
+                            if self.profile == 'vod' and self.date_str:
+                                task_status[self.client_id]['title'] = f"{self.date_str} {title}"
+                            else:
+                                task_status[self.client_id]['title'] = title
+                        
+                        if '[download]' in line_clean:
+                            progress_match = re.search(r'(\d+(?:\.\d+)?)%\s+of\s+(\S+)\s+at\s+(\S+)\s+ETA\s+(\S+)', line_clean)
+                            if progress_match:
+                                task_status[self.client_id]['progress'] = float(progress_match.group(1))
+                                task_status[self.client_id]['total_size'] = progress_match.group(2)
+                                task_status[self.client_id]['speed'] = progress_match.group(3)
+                                task_status[self.client_id]['eta'] = progress_match.group(4)
+                            else:
+                                percent_match = re.search(r'(\d+(?:\.\d+)?)%', line_clean)
+                                if percent_match:
+                                    task_status[self.client_id]['progress'] = float(percent_match.group(1))
                         
                 current_time = time.time()
                 if not hasattr(self, 'last_save_time') or (current_time - self.last_save_time) > 2.0:
@@ -221,25 +254,34 @@ class YTDLPRunner:
             if self.cancelled:
                 if self.process:
                     self.process.terminate()
-                task_status[self.client_id]['status'] = 'cancelled'
-                task_status[self.client_id]['title'] = 'Cancelled'
+                with tasks_lock:
+                    if self.client_id in task_status:
+                        task_status[self.client_id]['status'] = 'cancelled'
+                        task_status[self.client_id]['title'] = 'Cancelled'
             else:
                 self.process.wait()
-                if self.process.returncode == 0:
-                    task_status[self.client_id]['status'] = 'finished'
-                    task_status[self.client_id]['progress'] = 100.0
-                else:
-                    task_status[self.client_id]['status'] = f'error (code {self.process.returncode})'
+                with tasks_lock:
+                    if self.client_id in task_status:
+                        if self.process.returncode == 0:
+                            task_status[self.client_id]['status'] = 'finished'
+                            task_status[self.client_id]['progress'] = 100.0
+                            task_status[self.client_id]['speed'] = ''
+                            task_status[self.client_id]['eta'] = ''
+                        else:
+                            task_status[self.client_id]['status'] = f'error (code {self.process.returncode})'
             
             save_tasks()
             
         except Exception as e:
             logger.error(f"Task runtime error: {e}")
-            task_status[self.client_id]['status'] = 'error'
-            task_status[self.client_id]['log'].append(str(e))
+            with tasks_lock:
+                if self.client_id in task_status:
+                    task_status[self.client_id]['status'] = 'error'
+                    task_status[self.client_id]['log'].append(str(e))
         finally:
-            if self.client_id in active_downloaders:
-                del active_downloaders[self.client_id]
+            with tasks_lock:
+                if self.client_id in active_downloaders:
+                    del active_downloaders[self.client_id]
             save_tasks()
 
     def cancel(self):
@@ -281,52 +323,59 @@ def add_download():
 
 @app.route('/api/tasks', methods=['GET'])
 def get_tasks():
-    return jsonify(task_status)
+    with tasks_lock:
+        status_copy = copy.deepcopy(task_status)
+    return jsonify(status_copy)
 
 @app.route('/api/stop/<client_id>', methods=['POST'])
 def stop_task(client_id):
-    if client_id in active_downloaders:
-        active_downloaders[client_id].cancel()
-        return jsonify({"success": True})
-    elif client_id in task_status and task_status[client_id]['status'] in ['waiting']:
-         task_status[client_id]['status'] = 'cancelled'
-         save_tasks()
-         return jsonify({"success": True})
+    with tasks_lock:
+        downloader = active_downloaders.get(client_id)
+        if downloader:
+            downloader.cancel()
+            return jsonify({"success": True})
+        elif client_id in task_status and task_status[client_id]['status'] in ['waiting']:
+            task_status[client_id]['status'] = 'cancelled'
+            save_tasks()
+            return jsonify({"success": True})
     return jsonify({"error": "Task not found or not active"}), 404
 
 @app.route('/api/stop_all', methods=['POST'])
 def stop_all():
-    global active_downloaders
-    for cid, runner in active_downloaders.items():
-        runner.cancel()
-    
-    for cid, t in task_status.items():
-        if t['status'] == 'waiting':
-             t['status'] = 'cancelled'
+    with tasks_lock:
+        for cid, runner in list(active_downloaders.items()):
+            runner.cancel()
+        for cid, t in task_status.items():
+            if t['status'] == 'waiting':
+                t['status'] = 'cancelled'
     save_tasks()
     return jsonify({"success": True})
 
 @app.route('/api/remove/<client_id>', methods=['POST'])
 def remove_task(client_id):
-    if client_id in task_status and client_id not in active_downloaders:
-        del task_status[client_id]
-        save_tasks()
-        return jsonify({"success": True})
+    with tasks_lock:
+        if client_id in task_status and client_id not in active_downloaders:
+            del task_status[client_id]
+            save_tasks()
+            return jsonify({"success": True})
     return jsonify({"error": "Task not found or still active"}), 404
 
 @app.route('/api/clear_finished', methods=['POST'])
 def clear_finished():
-    global task_status
     include_cancelled = request.args.get('include_cancelled', 'false') == 'true'
     clearable = ['finished']
     if include_cancelled:
         clearable.extend(['cancelled', 'error', 'error (interrupted)'])
-    to_remove = []
-    for cid, task in task_status.items():
-        if task['status'] in clearable or (include_cancelled and 'error' in task['status']):
-            to_remove.append(cid)
-    for cid in to_remove:
-        del task_status[cid]
+    
+    with tasks_lock:
+        to_remove = []
+        for cid, task in task_status.items():
+            is_error = any(err in task['status'] for err in ['error', 'interrupted'])
+            if task['status'] in clearable or (include_cancelled and is_error):
+                if cid not in active_downloaders:
+                    to_remove.append(cid)
+        for cid in to_remove:
+            del task_status[cid]
     save_tasks()
     return jsonify({"success": True})
 

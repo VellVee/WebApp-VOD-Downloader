@@ -7,6 +7,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const waitLiveCb = document.getElementById('wait-live-cb');
     const vodDate = document.getElementById('vod-date');
     const btnDefault = document.getElementById('btn-default');
+    const btnAudio = document.getElementById('btn-audio');
     const btnVod = document.getElementById('btn-vod');
     
     const tasksContainer = document.getElementById('tasks-container');
@@ -25,6 +26,14 @@ document.addEventListener('DOMContentLoaded', () => {
     const btnTheme = document.getElementById('theme-btn');
     const settingClearAll = document.getElementById('setting-clear-all');
     const btnRestart = document.getElementById('btn-restart-server');
+
+    // Search and Filter Elements
+    const taskSearch = document.getElementById('task-search');
+    const filterBtns = document.querySelectorAll('.filter-btn');
+
+    let currentSearch = '';
+    let currentFilter = 'all';
+    const expandedLogs = new Set();
 
     // Theme initialization
     if(localStorage.getItem('theme') === 'light') {
@@ -49,6 +58,40 @@ document.addEventListener('DOMContentLoaded', () => {
     // UI state
     let tasksTimer = null;
     let oldTasksData = "{}";
+    let lastTasksData = {};
+
+    taskSearch.addEventListener('input', (e) => {
+        currentSearch = e.target.value.toLowerCase().trim();
+        renderTasks(lastTasksData);
+    });
+
+    filterBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+            filterBtns.forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            currentFilter = btn.dataset.filter;
+            renderTasks(lastTasksData);
+        });
+    });
+
+    window.toggleLogs = (id) => {
+        const drawer = document.getElementById(`log-drawer-${id}`);
+        const btn = document.getElementById(`log-btn-${id}`);
+        if (!drawer || !btn) return;
+        if (expandedLogs.has(id)) {
+            expandedLogs.delete(id);
+            drawer.classList.remove('active');
+            btn.classList.remove('active');
+        } else {
+            expandedLogs.add(id);
+            drawer.classList.add('active');
+            btn.classList.add('active');
+            const pre = drawer.querySelector('pre');
+            if (pre) {
+                pre.scrollTop = pre.scrollHeight;
+            }
+        }
+    };
 
     // Initialize
     const today = new Date().toISOString().split('T')[0];
@@ -205,6 +248,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     btnDefault.addEventListener('click', () => startDownload('default'));
+    btnAudio.addEventListener('click', () => startDownload('audio'));
     btnVod.addEventListener('click', () => startDownload('vod'));
 
     btnStopAll.addEventListener('click', async () => {
@@ -237,6 +281,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const res = await fetch('/api/tasks');
             const data = await res.json();
             
+            lastTasksData = data;
+            
             // Check if data changed to avoid unnecessary DOM rebuilds
             const newDataStr = JSON.stringify(data);
             const hasWaiting = Object.values(data).some(t => t.status === 'waiting');
@@ -264,12 +310,32 @@ document.addEventListener('DOMContentLoaded', () => {
         tasksContainer.innerHTML = '';
         
         let finished = 0;
-        
-        tasks.forEach(task => {
-            if (task.status === 'finished') finished++;
+        tasks.forEach(t => {
+            if (t.status === 'finished') finished++;
+        });
+
+        const filteredTasks = tasks.filter(task => {
+            const titleMatch = (task.title || '').toLowerCase().includes(currentSearch);
+            const urlMatch = (task.url || '').toLowerCase().includes(currentSearch);
+            const searchMatch = !currentSearch || titleMatch || urlMatch;
             
+            let filterMatch = true;
+            if (currentFilter === 'active') {
+                filterMatch = ['started'].includes(task.status);
+            } else if (currentFilter === 'waiting') {
+                filterMatch = ['waiting'].includes(task.status);
+            } else if (currentFilter === 'finished') {
+                filterMatch = ['finished'].includes(task.status);
+            } else if (currentFilter === 'failed') {
+                filterMatch = (task.status || '').startsWith('error');
+            }
+            
+            return searchMatch && filterMatch;
+        });
+
+        filteredTasks.forEach(task => {
             const logsStr = (task.log && task.log.length > 0) 
-                ? task.log.slice(-10).join('<br>') 
+                ? escapeHTML(task.log.slice(-150).join('\n')) 
                 : 'Waiting for output...';
             
             let statusText = task.status;
@@ -294,6 +360,46 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                 }
             }
+
+            let metaHtml = '';
+            if (task.status === 'started' || task.status === 'finished') {
+                const speed = task.speed || '';
+                const eta = task.eta || '';
+                const size = task.total_size || '';
+                
+                if (speed || eta || size) {
+                    metaHtml = `
+                        <div class="task-meta-row">
+                            ${size ? `
+                            <span class="task-meta-item size" title="Total Size">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+                                    <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
+                                    <line x1="12" y1="22.08" x2="12" y2="12"></line>
+                                </svg>
+                                ${escapeHTML(size)}
+                            </span>` : ''}
+                            ${speed ? `
+                            <span class="task-meta-item speed" title="Download Speed">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+                                </svg>
+                                ${escapeHTML(speed)}
+                            </span>` : ''}
+                            ${eta ? `
+                            <span class="task-meta-item eta" title="Estimated Time Remaining">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <circle cx="12" cy="12" r="10"></circle>
+                                    <polyline points="12 6 12 12 16 14"></polyline>
+                                </svg>
+                                ${escapeHTML(eta)}
+                            </span>` : ''}
+                        </div>
+                    `;
+                }
+            }
+
+            const isExpanded = expandedLogs.has(task.id);
             
             const html = `
                 <div class="task-item profile-${escapeHTML(task.profile)} ${task.status === 'finished' ? 'finished' : ''}">
@@ -315,11 +421,32 @@ document.addEventListener('DOMContentLoaded', () => {
                     <div class="progress-wrapper">
                         <div class="progress-bar" style="width: ${task.progress || 0}%"></div>
                     </div>
-                    ${['error', 'started', 'waiting', 'error (interrupted)', 'cancelled'].some(s => task.status.startsWith(s)) ? 
-                        `<div class="task-log">${logsStr}</div>` : ''}
+                    ${metaHtml}
+                    ${['error', 'started', 'waiting', 'error (interrupted)', 'cancelled'].some(s => task.status.startsWith(s)) ? `
+                        <button id="log-btn-${task.id}" class="btn-log-toggle ${isExpanded ? 'active' : ''}" onclick="toggleLogs('${task.id}')">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <polyline points="9 18 15 12 9 6"></polyline>
+                            </svg>
+                            Show Terminal Logs
+                        </button>
+                        <div id="log-drawer-${task.id}" class="task-log-drawer ${isExpanded ? 'active' : ''}">
+                            <pre class="task-log-pre">${logsStr}</pre>
+                        </div>
+                    ` : ''}
                 </div>
             `;
             tasksContainer.insertAdjacentHTML('beforeend', html);
+        });
+
+        // Auto-scroll any active log drawers to bottom
+        expandedLogs.forEach(id => {
+            const drawer = document.getElementById(`log-drawer-${id}`);
+            if (drawer) {
+                const pre = drawer.querySelector('pre');
+                if (pre) {
+                    pre.scrollTop = pre.scrollHeight;
+                }
+            }
         });
 
         // Update document title
