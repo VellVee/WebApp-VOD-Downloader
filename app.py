@@ -30,7 +30,7 @@ DEFAULT_SETTINGS = {
 
 task_status = {}
 active_downloaders = {}
-tasks_lock = threading.Lock()
+tasks_lock = threading.RLock()
 
 def load_settings():
     if os.path.exists(SETTINGS_FILE):
@@ -329,6 +329,7 @@ def get_tasks():
 
 @app.route('/api/stop/<client_id>', methods=['POST'])
 def stop_task(client_id):
+    should_save = False
     with tasks_lock:
         downloader = active_downloaders.get(client_id)
         if downloader:
@@ -336,8 +337,10 @@ def stop_task(client_id):
             return jsonify({"success": True})
         elif client_id in task_status and task_status[client_id]['status'] in ['waiting']:
             task_status[client_id]['status'] = 'cancelled'
-            save_tasks()
-            return jsonify({"success": True})
+            should_save = True
+    if should_save:
+        save_tasks()
+        return jsonify({"success": True})
     return jsonify({"error": "Task not found or not active"}), 404
 
 @app.route('/api/stop_all', methods=['POST'])
@@ -353,11 +356,14 @@ def stop_all():
 
 @app.route('/api/remove/<client_id>', methods=['POST'])
 def remove_task(client_id):
+    should_save = False
     with tasks_lock:
         if client_id in task_status and client_id not in active_downloaders:
             del task_status[client_id]
-            save_tasks()
-            return jsonify({"success": True})
+            should_save = True
+    if should_save:
+        save_tasks()
+        return jsonify({"success": True})
     return jsonify({"error": "Task not found or still active"}), 404
 
 @app.route('/api/clear_finished', methods=['POST'])

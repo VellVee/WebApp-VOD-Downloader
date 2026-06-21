@@ -152,11 +152,13 @@ body {
     outline: none;
     font-family: inherit;
     -moz-appearance: textfield;
+    appearance: textfield;
 }
 
 #delay-mins::-webkit-inner-spin-button,
 #delay-mins::-webkit-outer-spin-button {
     -webkit-appearance: none;
+    appearance: none;
     margin: 0;
 }
 
