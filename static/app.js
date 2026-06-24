@@ -307,7 +307,6 @@ document.addEventListener('DOMContentLoaded', () => {
         };
 
         const tasks = Object.values(data).sort((a, b) => b.created_at - a.created_at);
-        tasksContainer.innerHTML = '';
         
         let finished = 0;
         tasks.forEach(t => {
@@ -333,9 +332,19 @@ document.addEventListener('DOMContentLoaded', () => {
             return searchMatch && filterMatch;
         });
 
-        filteredTasks.forEach(task => {
+        // 1. Remove elements from tasksContainer that are no longer in filteredTasks
+        const currentTaskIds = new Set(filteredTasks.map(t => `task-${t.id}`));
+        const existingItems = tasksContainer.querySelectorAll('.task-item');
+        existingItems.forEach(item => {
+            if (!currentTaskIds.has(item.id)) {
+                item.remove();
+            }
+        });
+
+        // 2. Loop through filteredTasks and insert/update in DOM
+        filteredTasks.forEach((task, index) => {
             const logsStr = (task.log && task.log.length > 0) 
-                ? escapeHTML(task.log.slice(-150).join('\n')) 
+                ? task.log.slice(-150).join('\n') 
                 : 'Waiting for output...';
             
             let statusText = task.status;
@@ -361,58 +370,24 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
 
-            let metaHtml = '';
-            if (task.status === 'started' || task.status === 'finished') {
-                const speed = task.speed || '';
-                const eta = task.eta || '';
-                const size = task.total_size || '';
-                
-                if (speed || eta || size) {
-                    metaHtml = `
-                        <div class="task-meta-row">
-                            ${size ? `
-                            <span class="task-meta-item size" title="Total Size">
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                    <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
-                                    <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
-                                    <line x1="12" y1="22.08" x2="12" y2="12"></line>
-                                </svg>
-                                ${escapeHTML(size)}
-                            </span>` : ''}
-                            ${speed ? `
-                            <span class="task-meta-item speed" title="Download Speed">
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                    <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
-                                </svg>
-                                ${escapeHTML(speed)}
-                            </span>` : ''}
-                            ${eta ? `
-                            <span class="task-meta-item eta" title="Estimated Time Remaining">
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                    <circle cx="12" cy="12" r="10"></circle>
-                                    <polyline points="12 6 12 12 16 14"></polyline>
-                                </svg>
-                                ${escapeHTML(eta)}
-                            </span>` : ''}
-                        </div>
-                    `;
-                }
-            }
-
             const isExpanded = expandedLogs.has(task.id);
+            let card = document.getElementById(`task-${task.id}`);
             
-            const html = `
-                <div class="task-item profile-${escapeHTML(task.profile)} ${task.status === 'finished' ? 'finished' : ''}">
+            if (!card) {
+                // Construct the full initial card HTML
+                const html = `
                     <div class="task-header">
                         <div class="task-title" title="${escapeHTML(task.url)}">${escapeHTML(task.title)}</div>
                         <div style="display:flex; gap: 0.5rem; align-items:center;">
                             <span class="task-badge badge-${escapeHTML(task.profile)}">${escapeHTML(task.profile)}</span>
-                            ${['waiting', 'started'].includes(task.status) ? 
-                                `<button class="btn-small btn-danger" onclick="stopTask('${task.id}')">Stop</button>` 
-                                : ''}
-                            ${task.status === 'cancelled' || task.status.startsWith('error') ?
-                                `<button class="btn-small" onclick="removeTask('${task.id}')">Dismiss</button>`
-                                : ''}
+                            <div class="task-action-btns">
+                                ${['waiting', 'started'].includes(task.status) ? 
+                                    `<button class="btn-small btn-danger" onclick="stopTask('${task.id}')">Stop</button>` 
+                                    : ''}
+                                ${task.status === 'cancelled' || task.status.startsWith('error') ?
+                                    `<button class="btn-small" onclick="removeTask('${task.id}')">Dismiss</button>`
+                                    : ''}
+                            </div>
                         </div>
                     </div>
                     <div class="task-status-row">
@@ -421,7 +396,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     <div class="progress-wrapper">
                         <div class="progress-bar" style="width: ${task.progress || 0}%"></div>
                     </div>
-                    ${metaHtml}
+                    <div class="task-meta-container"></div>
                     ${['error', 'started', 'waiting', 'error (interrupted)', 'cancelled'].some(s => task.status.startsWith(s)) ? `
                         <button id="log-btn-${task.id}" class="btn-log-toggle ${isExpanded ? 'active' : ''}" onclick="toggleLogs('${task.id}')">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -430,12 +405,138 @@ document.addEventListener('DOMContentLoaded', () => {
                             Show Terminal Logs
                         </button>
                         <div id="log-drawer-${task.id}" class="task-log-drawer ${isExpanded ? 'active' : ''}">
-                            <pre class="task-log-pre">${logsStr}</pre>
+                            <pre class="task-log-pre">${escapeHTML(logsStr)}</pre>
                         </div>
                     ` : ''}
-                </div>
-            `;
-            tasksContainer.insertAdjacentHTML('beforeend', html);
+                `;
+                
+                card = document.createElement('div');
+                card.id = `task-${task.id}`;
+                card.className = `task-item profile-${task.profile} ${task.status === 'finished' ? 'finished' : ''}`;
+                card.innerHTML = html;
+                
+                // Insert at the correct sorted index position
+                if (index === 0) {
+                    tasksContainer.insertBefore(card, tasksContainer.firstChild);
+                } else {
+                    const sibling = tasksContainer.children[index];
+                    if (sibling) {
+                        tasksContainer.insertBefore(card, sibling);
+                    } else {
+                        tasksContainer.appendChild(card);
+                    }
+                }
+            } else {
+                // If card exists, update sorting index position if needed
+                const currentIdx = Array.from(tasksContainer.children).indexOf(card);
+                if (currentIdx !== index) {
+                    tasksContainer.removeChild(card);
+                    const sibling = tasksContainer.children[index];
+                    if (sibling) {
+                        tasksContainer.insertBefore(card, sibling);
+                    } else {
+                        tasksContainer.appendChild(card);
+                    }
+                }
+
+                // Update theme/finished classes
+                const expectedClass = `task-item profile-${task.profile} ${task.status === 'finished' ? 'finished' : ''}`;
+                if (card.className !== expectedClass) {
+                    card.className = expectedClass;
+                }
+
+                // Update Title
+                const titleEl = card.querySelector('.task-title');
+                if (titleEl && titleEl.textContent !== task.title) {
+                    titleEl.textContent = task.title;
+                }
+
+                // Update Action Buttons
+                const actionBtnsEl = card.querySelector('.task-action-btns');
+                if (actionBtnsEl) {
+                    const expectedBtnsHtml = `
+                        ${['waiting', 'started'].includes(task.status) ? 
+                            `<button class="btn-small btn-danger" onclick="stopTask('${task.id}')">Stop</button>` 
+                            : ''}
+                        ${task.status === 'cancelled' || task.status.startsWith('error') ?
+                            `<button class="btn-small" onclick="removeTask('${task.id}')">Dismiss</button>`
+                            : ''}
+                    `;
+                    if (actionBtnsEl.innerHTML.replace(/\s+/g, '') !== expectedBtnsHtml.replace(/\s+/g, '')) {
+                        actionBtnsEl.innerHTML = expectedBtnsHtml;
+                    }
+                }
+
+                // Update Status Text
+                const statusSpan = card.querySelector('.task-status-row span');
+                const expectedStatusStr = `${statusText} (${Math.round(task.progress || 0)}%)`;
+                if (statusSpan && statusSpan.textContent !== expectedStatusStr) {
+                    statusSpan.textContent = expectedStatusStr;
+                }
+
+                // Update Progress Bar width
+                const progressBar = card.querySelector('.progress-bar');
+                if (progressBar) {
+                    const expectedWidth = `${task.progress || 0}%`;
+                    if (progressBar.style.width !== expectedWidth) {
+                        progressBar.style.width = expectedWidth;
+                    }
+                }
+
+                // Update Log Pre textContent (keeps selection & doesn't break scroll height)
+                const logPre = card.querySelector('.task-log-pre');
+                if (logPre && logPre.textContent !== logsStr) {
+                    logPre.textContent = logsStr;
+                    if (isExpanded) {
+                        logPre.scrollTop = logPre.scrollHeight;
+                    }
+                }
+            }
+
+            // Update Meta Container
+            const metaContainer = card.querySelector('.task-meta-container');
+            if (metaContainer) {
+                let metaHtml = '';
+                if (task.status === 'started' || task.status === 'finished') {
+                    const speed = task.speed || '';
+                    const eta = task.eta || '';
+                    const size = task.total_size || '';
+                    
+                    if (speed || eta || size) {
+                        metaHtml = `
+                            <div class="task-meta-row">
+                                ${size ? `
+                                <span class="task-meta-item size" title="Total Size">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+                                        <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
+                                        <line x1="12" y1="22.08" x2="12" y2="12"></line>
+                                    </svg>
+                                    ${escapeHTML(size)}
+                                </span>` : ''}
+                                ${speed ? `
+                                <span class="task-meta-item speed" title="Download Speed">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+                                    </svg>
+                                    ${escapeHTML(speed)}
+                                </span>` : ''}
+                                ${eta ? `
+                                <span class="task-meta-item eta" title="Estimated Time Remaining">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <circle cx="12" cy="12" r="10"></circle>
+                                        <polyline points="12 6 12 12 16 14"></polyline>
+                                    </svg>
+                                    ${escapeHTML(eta)}
+                                </span>` : ''}
+                            </div>
+                        `;
+                    }
+                }
+                if (metaContainer.innerHTML !== metaHtml) {
+                    metaContainer.innerHTML = metaHtml;
+                }
+            }
         });
 
         // Auto-scroll any active log drawers to bottom

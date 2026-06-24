@@ -252,10 +252,6 @@ class YTDLPRunner:
                                     if percent_match:
                                         task_status[self.client_id]['progress'] = float(percent_match.group(1))
                             
-                    current_time = time.time()
-                    if not hasattr(self, 'last_save_time') or (current_time - self.last_save_time) > 2.0:
-                        save_tasks()
-                        self.last_save_time = current_time
 
                 if self.cancelled:
                     if self.process:
