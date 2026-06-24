@@ -11,6 +11,9 @@ import copy
 from datetime import datetime
 # pyrefly: ignore [missing-import]
 from flask import Flask, render_template, request, jsonify
+import socket
+import ipaddress
+from urllib.parse import urlparse
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -345,8 +348,35 @@ def add_download():
     if not url:
         return jsonify({"error": "URL required"}), 400
 
+    if any(c in url for c in " \t\n\r\"'`\x00"):
+        return jsonify({"error": "URL contains invalid or unsafe characters"}), 400
+
     if not url.startswith(('http://', 'https://')):
-        return jsonify({"error": "Invalid URL protocol. Must be http:// or https://"}), 400
+        url = 'https://' + url
+
+    try:
+        parsed = urlparse(url)
+        hostname = parsed.hostname
+        if not hostname:
+            return jsonify({"error": "Invalid URL structure"}), 400
+
+        if hostname.lower() in ('localhost', 'localhost.localdomain'):
+            return jsonify({"error": "Access to local addresses is forbidden"}), 400
+
+        try:
+            ip = ipaddress.ip_address(hostname)
+            if ip.is_loopback or ip.is_private or ip.is_link_local:
+                return jsonify({"error": "Access to private or local IP addresses is forbidden"}), 400
+        except ValueError:
+            try:
+                resolved_ip = socket.gethostbyname(hostname)
+                ip = ipaddress.ip_address(resolved_ip)
+                if ip.is_loopback or ip.is_private or ip.is_link_local:
+                    return jsonify({"error": "Resolved IP is a private or local address"}), 400
+            except socket.gaierror:
+                pass
+    except Exception:
+        return jsonify({"error": "Invalid URL structure"}), 400
 
 
     if date_str:
