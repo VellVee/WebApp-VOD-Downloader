@@ -194,81 +194,122 @@ class YTDLPRunner:
                         task_status[self.client_id]['title'] = 'Starting...'
                 save_tasks()
 
-            cmd = self.build_command()
-            with tasks_lock:
-                if self.client_id in task_status:
-                    task_status[self.client_id]['log'].append("Command: " + " ".join(cmd))
-            
-            # Hide window on Windows
-            creationflags = subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
-            
-            self.process = subprocess.Popen(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                encoding='utf-8',
-                errors='replace',
-                bufsize=1,
-                creationflags=creationflags
-            )
-
-            for line in iter(self.process.stdout.readline, ''):
-                if self.cancelled:
-                    break
-                line_clean = line.strip()
-                if not line_clean:
-                    continue
-                
+            # Main loop supporting auto-retry for wait_for_live
+            retry_count = 0
+            while not self.cancelled:
+                cmd = self.build_command()
                 with tasks_lock:
                     if self.client_id in task_status:
-                        task_status[self.client_id]['log'].append(line_clean)
-                        
-                        if len(task_status[self.client_id]['log']) > 150:
-                            task_status[self.client_id]['log'] = task_status[self.client_id]['log'][-150:]
-
-                        if line_clean.startswith('YT-DLP-TITLE:'):
-                            title = line_clean.split('YT-DLP-TITLE:', 1)[1].strip()
-                            if self.profile == 'vod' and self.date_str:
-                                task_status[self.client_id]['title'] = f"{self.date_str} {title}"
-                            else:
-                                task_status[self.client_id]['title'] = title
-                        
-                        if '[download]' in line_clean:
-                            progress_match = re.search(r'(\d+(?:\.\d+)?)%\s+of\s+(\S+)\s+at\s+(\S+)\s+ETA\s+(\S+)', line_clean)
-                            if progress_match:
-                                task_status[self.client_id]['progress'] = float(progress_match.group(1))
-                                task_status[self.client_id]['total_size'] = progress_match.group(2)
-                                task_status[self.client_id]['speed'] = progress_match.group(3)
-                                task_status[self.client_id]['eta'] = progress_match.group(4)
-                            else:
-                                percent_match = re.search(r'(\d+(?:\.\d+)?)%', line_clean)
-                                if percent_match:
-                                    task_status[self.client_id]['progress'] = float(percent_match.group(1))
-                        
-                current_time = time.time()
-                if not hasattr(self, 'last_save_time') or (current_time - self.last_save_time) > 2.0:
-                    save_tasks()
-                    self.last_save_time = current_time
-
-            if self.cancelled:
-                if self.process:
-                    self.process.terminate()
-                with tasks_lock:
-                    if self.client_id in task_status:
-                        task_status[self.client_id]['status'] = 'cancelled'
-                        task_status[self.client_id]['title'] = 'Cancelled'
-            else:
-                self.process.wait()
-                with tasks_lock:
-                    if self.client_id in task_status:
-                        if self.process.returncode == 0:
-                            task_status[self.client_id]['status'] = 'finished'
-                            task_status[self.client_id]['progress'] = 100.0
-                            task_status[self.client_id]['speed'] = ''
-                            task_status[self.client_id]['eta'] = ''
+                        if retry_count > 0:
+                            task_status[self.client_id]['log'].append(f"Auto-retry #{retry_count} starting...")
                         else:
-                            task_status[self.client_id]['status'] = f'error (code {self.process.returncode})'
+                            task_status[self.client_id]['log'].append("Command: " + " ".join(cmd))
+                
+                # Hide window on Windows
+                creationflags = subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
+                
+                self.process = subprocess.Popen(
+                    cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                    encoding='utf-8',
+                    errors='replace',
+                    bufsize=1,
+                    creationflags=creationflags
+                )
+
+                for line in iter(self.process.stdout.readline, ''):
+                    if self.cancelled:
+                        break
+                    line_clean = line.strip()
+                    if not line_clean:
+                        continue
+                    
+                    with tasks_lock:
+                        if self.client_id in task_status:
+                            task_status[self.client_id]['log'].append(line_clean)
+                            
+                            if len(task_status[self.client_id]['log']) > 150:
+                                task_status[self.client_id]['log'] = task_status[self.client_id]['log'][-150:]
+
+                            if line_clean.startswith('YT-DLP-TITLE:'):
+                                title = line_clean.split('YT-DLP-TITLE:', 1)[1].strip()
+                                if self.profile == 'vod' and self.date_str:
+                                    task_status[self.client_id]['title'] = f"{self.date_str} {title}"
+                                else:
+                                    task_status[self.client_id]['title'] = title
+                            
+                            if '[download]' in line_clean:
+                                progress_match = re.search(r'(\d+(?:\.\d+)?)%\s+of\s+(\S+)\s+at\s+(\S+)\s+ETA\s+(\S+)', line_clean)
+                                if progress_match:
+                                    task_status[self.client_id]['progress'] = float(progress_match.group(1))
+                                    task_status[self.client_id]['total_size'] = progress_match.group(2)
+                                    task_status[self.client_id]['speed'] = progress_match.group(3)
+                                    task_status[self.client_id]['eta'] = progress_match.group(4)
+                                else:
+                                    percent_match = re.search(r'(\d+(?:\.\d+)?)%', line_clean)
+                                    if percent_match:
+                                        task_status[self.client_id]['progress'] = float(percent_match.group(1))
+                            
+                    current_time = time.time()
+                    if not hasattr(self, 'last_save_time') or (current_time - self.last_save_time) > 2.0:
+                        save_tasks()
+                        self.last_save_time = current_time
+
+                if self.cancelled:
+                    if self.process:
+                        self.process.terminate()
+                    with tasks_lock:
+                        if self.client_id in task_status:
+                            task_status[self.client_id]['status'] = 'cancelled'
+                            task_status[self.client_id]['title'] = 'Cancelled'
+                    break
+                else:
+                    self.process.wait()
+                    returncode = self.process.returncode
+                    
+                    if returncode == 0:
+                        with tasks_lock:
+                            if self.client_id in task_status:
+                                task_status[self.client_id]['status'] = 'finished'
+                                task_status[self.client_id]['progress'] = 100.0
+                                task_status[self.client_id]['speed'] = ''
+                                task_status[self.client_id]['eta'] = ''
+                        break
+                    else:
+                        if self.wait_for_live:
+                            retry_count += 1
+                            retry_delay = 60
+                            with tasks_lock:
+                                if self.client_id in task_status:
+                                    task_status[self.client_id]['status'] = 'started'
+                                    task_status[self.client_id]['progress'] = 0.0
+                                    task_status[self.client_id]['speed'] = ''
+                                    task_status[self.client_id]['eta'] = ''
+                                    task_status[self.client_id]['log'].append(
+                                        f"Download failed with exit code {returncode}. Wait for live is active. Retrying in {retry_delay} seconds..."
+                                    )
+                            save_tasks()
+                            
+                            slept = 0
+                            while slept < retry_delay:
+                                if self.cancelled:
+                                    break
+                                time.sleep(1)
+                                slept += 1
+                                
+                            if self.cancelled:
+                                with tasks_lock:
+                                    if self.client_id in task_status:
+                                        task_status[self.client_id]['status'] = 'cancelled'
+                                        task_status[self.client_id]['title'] = 'Cancelled'
+                                break
+                        else:
+                            with tasks_lock:
+                                if self.client_id in task_status:
+                                    task_status[self.client_id]['status'] = f'error (code {returncode})'
+                            break
             
             save_tasks()
             
